@@ -198,6 +198,18 @@ PLIST may contain `:title', `:type', `:meta'."
              (concat "SELECT " synaxis-db--feed-columns
                      " FROM feeds ORDER BY title COLLATE NOCASE ASC, url ASC;")))))
 
+(defun synaxis-db-set-feed-title-if-empty (url title)
+  "Set feed URL's title to TITLE only if it is currently NULL or empty.
+Used to back-fill the title from a parsed feed without clobbering
+a title the user supplied at `synaxis-add-feed' time."
+  (when (and title (not (string-empty-p title)))
+    (let ((db (synaxis-db--ensure-open)))
+      (sqlite-execute
+       db
+       "UPDATE feeds SET title = ?
+        WHERE url = ? AND (title IS NULL OR title = '');"
+       (list title url)))))
+
 (defun synaxis-db-set-feed-cache-headers (url plist)
   "Update cache header fields on feed URL from PLIST.
 Recognised keys: `:last-fetched', `:last-modified', `:etag', `:failures'.
