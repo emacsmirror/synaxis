@@ -70,7 +70,7 @@ The function takes one argument, the entry plist."
     (cond
      ((null content)
       (insert (propertize "(no content)" 'face 'synaxis-show-meta-face)))
-     ((equal ctype "text")
+     ((string= ctype "text")
       (insert content))
      (t
       (let ((shr-use-fonts nil)
