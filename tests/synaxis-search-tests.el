@@ -84,8 +84,8 @@
    (let ((synaxis-search-default-filter ""))
      (synaxis-search))
    (with-current-buffer "*synaxis*"
-     (synaxis-search-set-filter "+unread")
-     (should (equal "+unread" synaxis-search--filter)))))
+     (synaxis-search-set-filter "tag:unread")
+     (should (equal "tag:unread" synaxis-search--filter)))))
 
 (ert-deftest synaxis-search-test-default-filter-shows-unread-only ()
   (synaxis-search-tests--with-tmp
