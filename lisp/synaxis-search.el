@@ -29,7 +29,7 @@
 (require 'synaxis-filter)
 (require 'synaxis-tl)
 
-(declare-function synaxis-show-entry "synaxis-show" (entry-id))
+(declare-function synaxis-show-entry "synaxis-show" (entry-id &optional peers))
 (declare-function synaxis-fetch-all "synaxis-fetch" ())
 (declare-function synaxis-add-feed "synaxis" (url &optional title))
 (declare-function synaxis-remove-feed "synaxis" (url))
@@ -206,11 +206,13 @@ Reads `:unread' from ENTRY rather than re-querying the DB."
     (synaxis-tl-replace-entry id (synaxis-search--entry-columns entry))))
 
 (defun synaxis-search-show-entry ()
-  "Open the entry at point in the show buffer."
+  "Open the entry at point in the show buffer.
+Hands the show buffer the current view's id sequence so its `n'
+and `p' can step between sibling entries."
   (interactive)
   (when-let* ((id (synaxis-search-current-entry)))
     (require 'synaxis-show)
-    (synaxis-show-entry id)
+    (synaxis-show-entry id (mapcar #'car tabulated-list-entries))
     (synaxis-search--redraw-current)))
 
 (defun synaxis-search-mark-all-read ()
