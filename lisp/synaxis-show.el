@@ -21,6 +21,7 @@
 
 ;;; Code:
 
+(require 'cl-lib)
 (require 'shr)
 (require 'keymap-popup)
 (require 'synaxis-db)
@@ -49,6 +50,12 @@ The function takes one argument, the entry plist."
 
 (defvar-local synaxis-show--entry-id nil
   "Database id of the entry currently displayed.")
+
+(defvar-local synaxis-show--peers nil
+  "List of entry ids in the originating list view.
+Order matches the displayed order at the time of opening.  Stale
+if the originating filter changes after opening; the user can
+press `g' on the list buffer and reopen to refresh.")
 
 ;;; Rendering
 
@@ -83,9 +90,12 @@ The function takes one argument, the entry plist."
 
 (keymap-popup-define synaxis-show-mode-map
   "Keymap for `synaxis-show-mode'."
+  :group "Navigate"
+  "n" ("Next entry"     synaxis-show-next-entry)
+  "p" ("Previous entry" synaxis-show-prev-entry)
   :group "Entry"
-  "g" ("Reload"   synaxis-show-revert)
-  "q" ("Quit"     quit-window))
+  "g" ("Reload"         synaxis-show-revert)
+  "q" ("Quit"           quit-window))
 
 ;;; Mode
 
@@ -101,8 +111,10 @@ The function takes one argument, the entry plist."
   (when synaxis-show--entry-id
     (synaxis-show-entry synaxis-show--entry-id)))
 
-(defun synaxis-show-entry (entry-id)
-  "Display the entry with database id ENTRY-ID."
+(defun synaxis-show-entry (entry-id &optional peers)
+  "Display the entry with database id ENTRY-ID.
+When PEERS is non-nil it is stored buffer-local so that `n' / `p'
+in the show buffer can navigate between sibling entries."
   (let ((entry (synaxis-db-get-entry entry-id)))
     (unless entry
       (user-error "No entry with id %s" entry-id))
@@ -114,9 +126,33 @@ The function takes one argument, the entry plist."
           (erase-buffer)
           (funcall synaxis-show-display-function entry)
           (goto-char (point-min)))
-        (setq synaxis-show--entry-id entry-id))
+        (setq synaxis-show--entry-id entry-id)
+        (when peers (setq synaxis-show--peers peers)))
       (synaxis-db-remove-tag entry-id "unread")
       (pop-to-buffer buf))))
+
+(defun synaxis-show--walk (delta)
+  "Show the peer entry at DELTA from the current one.
+DELTA is +1 (next) or -1 (previous).  Errors at the ends or when
+the buffer has no recorded peers."
+  (unless synaxis-show--peers
+    (user-error "Not in a navigable view"))
+  (let* ((peers  synaxis-show--peers)
+         (pos    (cl-position synaxis-show--entry-id peers))
+         (target (and pos (+ pos delta))))
+    (unless (and target (<= 0 target) (< target (length peers)))
+      (user-error "No more entries"))
+    (synaxis-show-entry (nth target peers) peers)))
+
+(defun synaxis-show-next-entry ()
+  "Show the next entry in the originating list view."
+  (interactive)
+  (synaxis-show--walk +1))
+
+(defun synaxis-show-prev-entry ()
+  "Show the previous entry in the originating list view."
+  (interactive)
+  (synaxis-show--walk -1))
 
 (provide 'synaxis-show)
 ;;; synaxis-show.el ends here
