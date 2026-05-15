@@ -1,0 +1,16 @@
+research
+*.elc
+
+/synaxis-autoloads.el
+/synaxis-pkg.el
+/lisp/synaxis-autoloads.el
+/lisp/synaxis-pkg.el
+.*
+!.gitignore
+!.elpaignore
+\#*
+
+*.md
+*.info
+*.texi
+refs/*
