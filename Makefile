@@ -1,7 +1,7 @@
 EMACS         ?= emacs
 KEYMAP_POPUP  ?= $(HOME)/Dev/emacs-lisp/keymap-popup
 LISP          := $(wildcard lisp/synaxis*.el)
-TESTS         := $(wildcard tests/synaxis-*-tests.el)
+TESTS         := $(wildcard tests/synaxis*-tests.el)
 
 LOAD := -L lisp -L $(KEYMAP_POPUP)
 
