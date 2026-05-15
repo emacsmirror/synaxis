@@ -39,6 +39,7 @@
 ;;; Code:
 
 (require 'cl-lib)
+(require 'synaxis-db)
 
 ;;; Date parsing
 
@@ -282,6 +283,61 @@ If TOK has no `:', treat as bare word (or drop when NEGATED)."
                    "1=1")
           :params (nreverse (car params))
           :limit limit)))
+
+;;; Completions
+
+(defcustom synaxis-filter-title-completion-limit 200
+  "Maximum number of entry titles offered as `title:' completions."
+  :type 'integer
+  :group 'synaxis)
+
+(defconst synaxis-filter--static-completions
+  '("tag:" "-tag:" "feed:" "-feed:" "title:" "-title:"
+    "content:" "-content:" "date:" "limit:"
+    "date:today" "date:yesterday"
+    "date:thisweek" "date:thismonth" "date:thisyear"
+    "date:7d" "date:30d" "date:1y")
+  "Static completion strings independent of DB state.")
+
+(defun synaxis-filter--db-tags ()
+  "Return the list of distinct tag strings in the database."
+  (let ((db (synaxis-db--ensure-open)))
+    (mapcar #'car
+            (sqlite-select
+             db "SELECT DISTINCT tag FROM entry_tags ORDER BY tag;"))))
+
+(defun synaxis-filter--db-feed-titles ()
+  "Return the list of non-empty feed titles in the database."
+  (let ((db (synaxis-db--ensure-open)))
+    (mapcar #'car
+            (sqlite-select
+             db "SELECT title FROM feeds
+                 WHERE title IS NOT NULL AND title <> ''
+                 ORDER BY title COLLATE NOCASE;"))))
+
+(defun synaxis-filter--db-recent-entry-titles (limit)
+  "Return the LIMIT most-recent distinct entry titles."
+  (let ((db (synaxis-db--ensure-open)))
+    (mapcar #'car
+            (sqlite-select
+             db "SELECT DISTINCT title FROM entries
+                 WHERE title IS NOT NULL AND title <> ''
+                 ORDER BY date DESC LIMIT ?;"
+             (list limit)))))
+
+(defun synaxis-filter-completions ()
+  "Return a list of completion candidate strings for the filter prompt."
+  (let ((tags  (synaxis-filter--db-tags))
+        (feeds (synaxis-filter--db-feed-titles))
+        (titles (synaxis-filter--db-recent-entry-titles
+                 synaxis-filter-title-completion-limit)))
+    (append
+     synaxis-filter--static-completions
+     (mapcar (lambda (v) (concat "tag:" v)) tags)
+     (mapcar (lambda (v) (concat "-tag:" v)) tags)
+     (mapcar (lambda (v) (concat "feed:" v)) feeds)
+     (mapcar (lambda (v) (concat "-feed:" v)) feeds)
+     (mapcar (lambda (v) (concat "title:" v)) titles))))
 
 (provide 'synaxis-filter)
 ;;; synaxis-filter.el ends here
