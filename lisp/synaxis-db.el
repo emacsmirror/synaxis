@@ -233,13 +233,17 @@ Keys absent or nil leave the corresponding column unchanged."
 
 (defconst synaxis-db--entry-columns
   "e.id, e.feed_url, e.source_id, e.title, e.link, e.date,
-   e.content, e.content_type, e.meta, f.title"
-  "Column list used to project entry rows into plists (joined with feeds).")
+   e.content, e.content_type, e.meta, f.title,
+   EXISTS (SELECT 1 FROM entry_tags t
+           WHERE t.entry_id = e.id AND t.tag = 'unread') AS unread"
+  "Column list used to project entry rows into plists (joined with feeds).
+The trailing EXISTS column lets callers know `unread' status without a
+second query.")
 
 (defun synaxis-db--row-to-entry-plist (row)
   "Convert ROW (column order matches `synaxis-db--entry-columns') to a plist."
   (pcase-let ((`(,id ,feed-url ,source-id ,title ,link ,date
-                     ,content ,ctype ,meta ,feed-title)
+                     ,content ,ctype ,meta ,feed-title ,unread)
                row))
     (list :id id
           :feed-url feed-url
@@ -250,7 +254,8 @@ Keys absent or nil leave the corresponding column unchanged."
           :date date
           :content content
           :content-type ctype
-          :meta (synaxis-db--decode-meta meta))))
+          :meta (synaxis-db--decode-meta meta)
+          :unread (not (zerop (or unread 0))))))
 
 (defun synaxis-db-upsert-entry (plist)
   "Insert or update an entry described by PLIST.
