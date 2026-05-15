@@ -137,9 +137,10 @@ Reads `:unread' from ENTRY rather than re-querying the DB."
   "p" ("Previous"     previous-line :stay-open t)
   "RET" ("Open"       synaxis-search-show-entry)
   :group "Tags"
-  "r" ("Toggle read"  synaxis-search-toggle-read :stay-open t)
-  "+" ("Add tag"      synaxis-search-tag-entry :stay-open t)
-  "-" ("Remove tag"   synaxis-search-untag-entry :stay-open t)
+  "r" ("Toggle read"     synaxis-search-toggle-read :stay-open t)
+  "R" ("Mark all read"   synaxis-search-mark-all-read)
+  "+" ("Add tag"         synaxis-search-tag-entry :stay-open t)
+  "-" ("Remove tag"      synaxis-search-untag-entry :stay-open t)
   :group "Feeds"
   "A" ("Add feed"     synaxis-add-feed)
   "D" ("Remove feed"  synaxis-remove-feed)
@@ -211,6 +212,17 @@ Reads `:unread' from ENTRY rather than re-querying the DB."
     (require 'synaxis-show)
     (synaxis-show-entry id)
     (synaxis-search--redraw-current)))
+
+(defun synaxis-search-mark-all-read ()
+  "Mark every entry currently visible in the buffer as read."
+  (interactive)
+  (let* ((ids (mapcar #'car tabulated-list-entries))
+         (n   (length ids)))
+    (unless ids (user-error "No entries to mark"))
+    (when (y-or-n-p (format "Mark %d entries as read? " n))
+      (synaxis-db-bulk-remove-tag ids "unread")
+      (synaxis-search-refresh)
+      (message "synaxis: marked %d entries as read" n))))
 
 (defun synaxis-search-toggle-read ()
   "Toggle the `unread' tag on the entry at point."
