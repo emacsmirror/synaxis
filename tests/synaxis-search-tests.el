@@ -167,5 +167,38 @@
        (should-error (call-interactively 'synaxis-search-untag-entry)
                      :type 'user-error)))))
 
+(ert-deftest synaxis-search-test-mark-all-read-marks-visible-entries ()
+  (synaxis-search-tests--with-tmp
+   (let ((id1 (synaxis-search-tests--add-entry
+               "https://example.com/x" "1" "A" 1.0 t))
+         (id2 (synaxis-search-tests--add-entry
+               "https://example.com/x" "2" "B" 2.0 t)))
+     (let ((synaxis-search-default-filter ""))
+       (synaxis-search))
+     (with-current-buffer "*synaxis*"
+       (cl-letf (((symbol-function 'y-or-n-p) (lambda (&rest _) t)))
+         (call-interactively 'synaxis-search-mark-all-read))
+       (should-not (member "unread" (synaxis-db-get-tags id1)))
+       (should-not (member "unread" (synaxis-db-get-tags id2)))))))
+
+(ert-deftest synaxis-search-test-mark-all-read-respects-cancel ()
+  (synaxis-search-tests--with-tmp
+   (let ((id (synaxis-search-tests--add-entry
+              "https://example.com/x" "1" "T" 1.0 t)))
+     (let ((synaxis-search-default-filter ""))
+       (synaxis-search))
+     (with-current-buffer "*synaxis*"
+       (cl-letf (((symbol-function 'y-or-n-p) (lambda (&rest _) nil)))
+         (call-interactively 'synaxis-search-mark-all-read))
+       (should (member "unread" (synaxis-db-get-tags id)))))))
+
+(ert-deftest synaxis-search-test-mark-all-read-errors-when-empty ()
+  (synaxis-search-tests--with-tmp
+   (let ((synaxis-search-default-filter ""))
+     (synaxis-search))
+   (with-current-buffer "*synaxis*"
+     (should-error (call-interactively 'synaxis-search-mark-all-read)
+                   :type 'user-error))))
+
 (provide 'synaxis-search-tests)
 ;;; synaxis-search-tests.el ends here

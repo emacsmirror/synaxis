@@ -243,6 +243,27 @@
      (let ((tags (sort (synaxis-db-get-tags id) #'string<)))
        (should (equal tags '("starred" "unread")))))))
 
+(ert-deftest synaxis-db-test-bulk-remove-tag ()
+  "Bulk-remove-tag clears TAG only from the listed ids."
+  (synaxis-db-tests--with-tmp
+   (synaxis-db-add-feed "https://example.com/b")
+   (let ((ids (cl-loop for i below 5
+                       collect (synaxis-db-upsert-entry
+                                `(:feed-url "https://example.com/b"
+                                            :source-id ,(format "%d" i)
+                                            :title "T" :date ,(float i))))))
+     (dolist (id ids) (synaxis-db-add-tag id "unread"))
+     (synaxis-db-bulk-remove-tag (cl-subseq ids 0 3) "unread")
+     (dolist (id (cl-subseq ids 0 3))
+       (should-not (member "unread" (synaxis-db-get-tags id))))
+     (dolist (id (cl-subseq ids 3))
+       (should (member "unread" (synaxis-db-get-tags id)))))))
+
+(ert-deftest synaxis-db-test-bulk-remove-tag-empty-ids-noop ()
+  "Passing nil as ENTRY-IDS is a silent no-op."
+  (synaxis-db-tests--with-tmp
+   (should-not (synaxis-db-bulk-remove-tag nil "unread"))))
+
 (ert-deftest synaxis-db-test-remove-tag ()
   "remove-tag deletes only the named tag."
   (synaxis-db-tests--with-tmp
