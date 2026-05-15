@@ -15,18 +15,19 @@
 
 ;;; Commentary:
 
-;; The entry list buffer.  A pure renderer: holds no derived state,
-;; every refresh re-runs a SQL `SELECT' and replays ewoc nodes.  Tag
-;; commands write through to the database immediately and invalidate
-;; the affected node so it redraws.
+;; The entry list buffer.  Pure renderer: holds no derived state.
+;; Every refresh re-runs a SQL `SELECT' and feeds rows into
+;; `tabulated-list-mode' via `synaxis-tl-print'.  Tag commands write
+;; through to the database and replace just the affected row.
 
 ;;; Code:
 
 (require 'cl-lib)
-(require 'ewoc)
+(require 'tabulated-list)
 (require 'keymap-popup)
 (require 'synaxis-db)
 (require 'synaxis-filter)
+(require 'synaxis-tl)
 
 (declare-function synaxis-show-entry "synaxis-show" (entry-id))
 (declare-function synaxis-fetch-all "synaxis-fetch" ())
@@ -34,14 +35,20 @@
 ;;; Customisation
 
 (defcustom synaxis-search-default-filter "+unread"
-  "Initial filter for the list buffer.
-For v0.1 the recognised values are the empty string, `+unread', and
-`-unread'.  The full filter mini-language lands in `synaxis-filter'."
+  "Initial filter for the list buffer."
   :type 'string
   :group 'synaxis)
 
 (defcustom synaxis-search-default-limit 200
   "Maximum number of entries shown in the list buffer."
+  :type 'integer
+  :group 'synaxis)
+
+(defcustom synaxis-search-title-width 200
+  "Width budget for the title column.
+Long titles are clipped at the window edge via `truncate-lines',
+not truncated to this width.  A large value here means the column
+spec never forces an ellipsis."
   :type 'integer
   :group 'synaxis)
 
@@ -69,9 +76,6 @@ For v0.1 the recognised values are the empty string, `+unread', and
 
 ;;; Buffer-local state
 
-(defvar-local synaxis-search--ewoc nil
-  "Ewoc instance for the current list buffer.")
-
 (defvar-local synaxis-search--filter nil
   "Current filter string for the list buffer.")
 
@@ -84,26 +88,33 @@ For v0.1 the recognised values are the empty string, `+unread', and
           (plist-get c :params)
           (or (plist-get c :limit) synaxis-search-default-limit))))
 
-;;; Pretty-printer
+;;; Row formatting
 
-(defun synaxis-search--pp (entry)
-  "Ewoc printer for an entry plist ENTRY."
-  (let* ((id      (plist-get entry :id))
-         (date    (format-time-string
-                   "%Y-%m-%d"
-                   (seconds-to-time (or (plist-get entry :date) 0))))
-         (tags    (and id (synaxis-db-get-tags id)))
-         (unread  (member "unread" tags))
-         (mark    (if unread "*" " "))
-         (feed    (truncate-string-to-width
-                   (or (plist-get entry :feed-title) "?") 16 nil ?\s "…"))
-         (title   (or (plist-get entry :title) "(untitled)"))
-         (face    (if unread 'synaxis-search-unread-face 'synaxis-search-read-face)))
-    (insert (propertize date 'face 'synaxis-search-date-face)
-            " " mark " "
+(defun synaxis-search--entry-columns (entry)
+  "Convert ENTRY plist to the column vector used by `tabulated-list-mode'."
+  (let* ((id     (plist-get entry :id))
+         (tags   (and id (synaxis-db-get-tags id)))
+         (unread (and (member "unread" tags) t))
+         (date   (format-time-string
+                  "%Y-%m-%d"
+                  (seconds-to-time (or (plist-get entry :date) 0))))
+         (mark   (if unread "*" " "))
+         (feed   (or (plist-get entry :feed-title) "?"))
+         (title  (or (plist-get entry :title) "(untitled)"))
+         (title-face (if unread
+                         'synaxis-search-unread-face
+                       'synaxis-search-read-face)))
+    (vector (propertize date 'face 'synaxis-search-date-face)
+            mark
             (propertize feed 'face 'synaxis-search-feed-face)
-            "  "
-            (propertize title 'face face))))
+            (propertize title 'face title-face))))
+
+(defun synaxis-search--format ()
+  "Return the `tabulated-list-format' vector."
+  (vector (list "Date" 10 t)
+          (list ""     1  nil)
+          (list "Feed" 16 t)
+          (list "Title" synaxis-search-title-width t)))
 
 ;;; Mode and keymap
 
@@ -123,10 +134,14 @@ For v0.1 the recognised values are the empty string, `+unread', and
   "u" ("Update feeds" synaxis-search-update)
   "q" ("Quit"         quit-window))
 
-(define-derived-mode synaxis-search-mode special-mode "Synaxis"
+(define-derived-mode synaxis-search-mode tabulated-list-mode "Synaxis"
   "Major mode for the synaxis entry list buffer."
-  (buffer-disable-undo)
-  (setq-local revert-buffer-function (lambda (&rest _) (synaxis-search-refresh))))
+  (setq tabulated-list-format (synaxis-search--format))
+  (setq tabulated-list-padding 1)
+  (setq tabulated-list-sort-key nil)
+  (setq-local truncate-lines t)
+  (setq-local revert-buffer-function (lambda (&rest _) (synaxis-search-refresh)))
+  (tabulated-list-init-header))
 
 ;;; Commands
 
@@ -138,54 +153,49 @@ For v0.1 the recognised values are the empty string, `+unread', and
     (with-current-buffer buf
       (unless (derived-mode-p 'synaxis-search-mode)
         (synaxis-search-mode)
-        (setq synaxis-search--filter synaxis-search-default-filter)
-        (let ((inhibit-read-only t))
-          (erase-buffer))
-        (setq synaxis-search--ewoc
-              (ewoc-create #'synaxis-search--pp nil nil t)))
+        (setq synaxis-search--filter synaxis-search-default-filter))
       (synaxis-search-refresh))
     (display-buffer buf)))
 
 (defun synaxis-search-refresh ()
-  "Re-run the current filter's query and repopulate the ewoc."
+  "Re-run the current filter's query and repopulate the buffer."
   (interactive)
-  (when synaxis-search--ewoc
+  (when (derived-mode-p 'synaxis-search-mode)
     (let* ((spec    (synaxis-search--compile-filter
                      (or synaxis-search--filter "")))
            (where   (nth 0 spec))
            (params  (nth 1 spec))
            (limit   (nth 2 spec))
-           (entries (synaxis-db-list-entries where params limit))
-           (inhibit-read-only t))
-      (ewoc-filter synaxis-search--ewoc (lambda (_) nil))
-      (ewoc-set-hf synaxis-search--ewoc
-                   (format "synaxis  [%s]  %d entries\n\n"
-                           (or synaxis-search--filter "")
-                           (length entries))
-                   "")
-      (dolist (e entries)
-        (ewoc-enter-last synaxis-search--ewoc e)))))
+           (entries (synaxis-db-list-entries where params limit)))
+      (setq tabulated-list-entries
+            (mapcar (lambda (e)
+                      (list (plist-get e :id)
+                            (synaxis-search--entry-columns e)))
+                    entries))
+      (let ((header (format "synaxis  [%s]  %d entries"
+                            (or synaxis-search--filter "")
+                            (length entries))))
+        (setq mode-line-buffer-identification
+              (list (propertize header 'face 'mode-line-buffer-id))))
+      (synaxis-tl-print t))))
 
 (defun synaxis-search-current-entry ()
   "Return the entry id at point, or nil."
-  (let ((node (and synaxis-search--ewoc
-                   (ewoc-locate synaxis-search--ewoc))))
-    (and node (plist-get (ewoc-data node) :id))))
+  (tabulated-list-get-id))
 
 (defun synaxis-search--redraw-current ()
-  "Invalidate the ewoc node at point, forcing a redraw."
-  (let ((node (and synaxis-search--ewoc
-                   (ewoc-locate synaxis-search--ewoc))))
-    (when node (ewoc-invalidate synaxis-search--ewoc node))))
+  "Re-render the row at point from the latest DB state."
+  (when-let* ((id (synaxis-search-current-entry))
+              (entry (synaxis-db-get-entry id)))
+    (synaxis-tl-replace-entry id (synaxis-search--entry-columns entry))))
 
 (defun synaxis-search-show-entry ()
   "Open the entry at point in the show buffer."
   (interactive)
-  (let ((id (synaxis-search-current-entry)))
-    (when id
-      (require 'synaxis-show)
-      (synaxis-show-entry id)
-      (synaxis-search--redraw-current))))
+  (when-let* ((id (synaxis-search-current-entry)))
+    (require 'synaxis-show)
+    (synaxis-show-entry id)
+    (synaxis-search--redraw-current)))
 
 (defun synaxis-search-toggle-read ()
   "Toggle the `unread' tag on the entry at point."
