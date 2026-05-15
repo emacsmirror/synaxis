@@ -180,6 +180,23 @@
                   :title ,(format "T%d" i) :date ,(float i))))
    (should (= 2 (length (synaxis-db-list-entries nil nil 2))))))
 
+(ert-deftest synaxis-db-test-list-entries-includes-unread-flag ()
+  "Each row's :unread reflects the tag without a second query."
+  (synaxis-db-tests--with-tmp
+   (synaxis-db-add-feed "https://example.com/u")
+   (let ((id1 (synaxis-db-upsert-entry
+               '(:feed-url "https://example.com/u" :source-id "1"
+                           :title "U" :date 1.0)))
+         (id2 (synaxis-db-upsert-entry
+               '(:feed-url "https://example.com/u" :source-id "2"
+                           :title "R" :date 2.0))))
+     (synaxis-db-add-tag id1 "unread")
+     (let* ((entries (synaxis-db-list-entries nil nil))
+            (by-id (lambda (id) (seq-find (lambda (e) (eq id (plist-get e :id)))
+                                          entries))))
+       (should (plist-get (funcall by-id id1) :unread))
+       (should-not (plist-get (funcall by-id id2) :unread))))))
+
 (ert-deftest synaxis-db-test-list-entries-includes-feed-title ()
   "Joined query exposes feed title under :feed-title."
   (synaxis-db-tests--with-tmp
