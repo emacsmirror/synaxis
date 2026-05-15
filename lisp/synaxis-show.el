@@ -116,7 +116,7 @@ The function takes one argument, the entry plist."
           (goto-char (point-min)))
         (setq synaxis-show--entry-id entry-id))
       (synaxis-db-remove-tag entry-id "unread")
-      (display-buffer buf))))
+      (pop-to-buffer buf))))
 
 (provide 'synaxis-show)
 ;;; synaxis-show.el ends here
