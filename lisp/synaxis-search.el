@@ -123,6 +123,16 @@ spec never forces an ellipsis."
 
 (keymap-popup-define synaxis-search-mode-map
   "Keymap for `synaxis-search-mode'."
+  :description
+  (lambda ()
+    (with-current-buffer (or (get-buffer "*synaxis*") (current-buffer))
+      (format "synaxis  [%s]  %d entries"
+              (or (and (boundp 'synaxis-search--filter)
+                       synaxis-search--filter)
+                  "")
+              (if (boundp 'tabulated-list-entries)
+                  (length tabulated-list-entries)
+                0))))
   :group "Navigation"
   "n" ("Next"         next-line :stay-open t)
   "p" ("Previous"     previous-line :stay-open t)
@@ -136,7 +146,7 @@ spec never forces an ellipsis."
   "D" ("Remove feed"  synaxis-remove-feed)
   "u" ("Update feeds" synaxis-search-update)
   :group "View"
-  "s" ("Filter"       synaxis-search-set-filter)
+  "l" ("Filter"       synaxis-search-set-filter)
   "g" ("Refresh"      synaxis-search-refresh)
   "q" ("Quit"         quit-window))
 
@@ -228,10 +238,26 @@ spec never forces an ellipsis."
     (synaxis-db-remove-tag id tag)
     (synaxis-search--redraw-current)))
 
+(defun synaxis-search--read-filter (default)
+  "Read a filter string with prefix-aware completion.
+DEFAULT is the initial value shown in the minibuffer."
+  (let* ((cands (synaxis-filter-completions))
+         (table (completion-table-dynamic
+                 (lambda (input)
+                   (if (string-match "\\(^\\|.* \\)\\([^ ]*\\)\\'" input)
+                       (let ((prefix (match-string 1 input))
+                             (suffix (match-string 2 input)))
+                         (mapcar (lambda (c) (concat prefix c))
+                                 (all-completions suffix cands)))
+                     (list input))))))
+    (completing-read "Filter: " table nil nil default)))
+
 (defun synaxis-search-set-filter (filter)
-  "Set the buffer's filter to FILTER and refresh."
-  (interactive (list (read-string "Filter: "
-                                  (or synaxis-search--filter ""))))
+  "Set the buffer's filter to FILTER and refresh.
+Interactively, prompts with `completing-read' and prefix-aware
+completion against `synaxis-filter-completions'."
+  (interactive
+   (list (synaxis-search--read-filter (or synaxis-search--filter ""))))
   (setq synaxis-search--filter filter)
   (synaxis-search-refresh))
 
