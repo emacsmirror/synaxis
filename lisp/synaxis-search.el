@@ -238,19 +238,19 @@ spec never forces an ellipsis."
     (synaxis-db-remove-tag id tag)
     (synaxis-search--redraw-current)))
 
+(defvar crm-separator)
+
 (defun synaxis-search--read-filter (default)
-  "Read a filter string with prefix-aware completion.
-DEFAULT is the initial value shown in the minibuffer."
-  (let* ((cands (synaxis-filter-completions))
-         (table (completion-table-dynamic
-                 (lambda (input)
-                   (if (string-match "\\(^\\|.* \\)\\([^ ]*\\)\\'" input)
-                       (let ((prefix (match-string 1 input))
-                             (suffix (match-string 2 input)))
-                         (mapcar (lambda (c) (concat prefix c))
-                                 (all-completions suffix cands)))
-                     (list input))))))
-    (completing-read "Filter: " table nil nil default)))
+  "Read a filter string with `completing-read-multiple' and `,' separator.
+DEFAULT is the current filter (whitespace-separated); spaces are
+swapped for commas so CRM splits the initial value into items.
+The returned string is whitespace-joined for the parser."
+  (let* ((candidates (synaxis-filter-completions))
+         (crm-separator ",")
+         (initial (replace-regexp-in-string " " "," (or default ""))))
+    (string-join
+     (completing-read-multiple "Filter: " candidates nil nil initial)
+     " ")))
 
 (defun synaxis-search-set-filter (filter)
   "Set the buffer's filter to FILTER and refresh.
