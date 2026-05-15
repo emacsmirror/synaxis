@@ -26,6 +26,7 @@
 (require 'ewoc)
 (require 'keymap-popup)
 (require 'synaxis-db)
+(require 'synaxis-filter)
 
 (declare-function synaxis-show-entry "synaxis-show" (entry-id))
 (declare-function synaxis-fetch-all "synaxis-fetch" ())
@@ -74,25 +75,14 @@ For v0.1 the recognised values are the empty string, `+unread', and
 (defvar-local synaxis-search--filter nil
   "Current filter string for the list buffer.")
 
-;;; Filter compilation (stub replaced in synaxis-filter)
+;;; Filter compilation
 
 (defun synaxis-search--compile-filter (filter)
-  "Compile FILTER string to (WHERE PARAMS LIMIT).
-Stub: handles only empty, `+unread', and `-unread' until
-`synaxis-filter' lands."
-  (let ((limit synaxis-search-default-limit))
-    (cond
-     ((or (null filter) (string-empty-p filter))
-      (list "1=1" nil limit))
-     ((string= filter "+unread")
-      (list (concat "EXISTS (SELECT 1 FROM entry_tags t"
-                    " WHERE t.entry_id = e.id AND t.tag = 'unread')")
-            nil limit))
-     ((string= filter "-unread")
-      (list (concat "NOT EXISTS (SELECT 1 FROM entry_tags t"
-                    " WHERE t.entry_id = e.id AND t.tag = 'unread')")
-            nil limit))
-     (t (list "1=1" nil limit)))))
+  "Compile FILTER string to (WHERE PARAMS LIMIT) for the DB layer."
+  (let ((c (synaxis-filter-compile (synaxis-filter-parse filter))))
+    (list (plist-get c :where)
+          (plist-get c :params)
+          (or (plist-get c :limit) synaxis-search-default-limit))))
 
 ;;; Pretty-printer
 
