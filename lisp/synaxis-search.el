@@ -222,16 +222,23 @@ Reads `:unread' from ENTRY rather than re-querying the DB."
     (synaxis-search--redraw-current)))
 
 (defun synaxis-search-tag-entry (tag)
-  "Add TAG to the entry at point."
-  (interactive (list (read-string "Add tag: ")))
+  "Add TAG to the entry at point.
+Completes against existing tags but accepts new ones."
+  (interactive
+   (list (completing-read "Add tag: " (synaxis-filter--db-tags) nil nil)))
   (when-let* ((id (synaxis-search-current-entry))
               ((not (string-empty-p tag))))
     (synaxis-db-add-tag id tag)
     (synaxis-search--redraw-current)))
 
 (defun synaxis-search-untag-entry (tag)
-  "Remove TAG from the entry at point."
-  (interactive (list (read-string "Remove tag: ")))
+  "Remove TAG from the entry at point.
+Completes against the entry's current tags only."
+  (interactive
+   (let* ((id (synaxis-search-current-entry))
+          (tags (and id (synaxis-db-get-tags id))))
+     (unless tags (user-error "No tags on this entry"))
+     (list (completing-read "Remove tag: " tags nil t))))
   (when-let* ((id (synaxis-search-current-entry))
               ((not (string-empty-p tag))))
     (synaxis-db-remove-tag id tag)
