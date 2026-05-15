@@ -90,6 +90,56 @@
      (should (equal "Atom Test Feed"
                     (plist-get (synaxis-db-get-feed url) :title))))))
 
+(ert-deftest synaxis-fetch-test-autotags-applied-on-fresh-insert ()
+  "Tags listed in `feeds.meta.autotags' decorate every fresh entry."
+  (synaxis-fetch-tests--with-tmp
+   (let ((url "https://example.com/atom"))
+     (synaxis-db-add-feed url '(:meta (:autotags ["emacs" "linux"])))
+     (let ((buf (synaxis-fetch-tests--response
+                 "200 OK" nil
+                 (synaxis-fetch-tests--load "atom-1.0-minimal.xml"))))
+       (synaxis-fetch--process-response buf url)
+       (kill-buffer buf))
+     (let* ((id (plist-get (car (synaxis-db-list-entries nil nil)) :id))
+            (tags (synaxis-db-get-tags id)))
+       (should (member "unread" tags))
+       (should (member "emacs" tags))
+       (should (member "linux" tags))))))
+
+(ert-deftest synaxis-fetch-test-autotags-not-applied-on-update ()
+  "Re-ingest of an existing entry does not re-tag with autotags."
+  (synaxis-fetch-tests--with-tmp
+   (let ((url "https://example.com/atom"))
+     (synaxis-db-add-feed url '(:meta (:autotags ["emacs"])))
+     (let ((buf (synaxis-fetch-tests--response
+                 "200 OK" nil
+                 (synaxis-fetch-tests--load "atom-1.0-minimal.xml"))))
+       (synaxis-fetch--process-response buf url)
+       (kill-buffer buf))
+     (let ((id (plist-get (car (synaxis-db-list-entries nil nil)) :id)))
+       ;; User strips the autotag.
+       (synaxis-db-remove-tag id "emacs")
+       (should-not (member "emacs" (synaxis-db-get-tags id)))
+       ;; Re-ingest of same content: should NOT re-apply.
+       (let ((buf (synaxis-fetch-tests--response
+                   "200 OK" nil
+                   (synaxis-fetch-tests--load "atom-1.0-minimal.xml"))))
+         (synaxis-fetch--process-response buf url)
+         (kill-buffer buf))
+       (should-not (member "emacs" (synaxis-db-get-tags id)))))))
+
+(ert-deftest synaxis-fetch-test-empty-autotags-is-noop ()
+  "Feed without autotags meta still inserts cleanly."
+  (synaxis-fetch-tests--with-tmp
+   (let ((url "https://example.com/atom"))
+     (let ((buf (synaxis-fetch-tests--response
+                 "200 OK" nil
+                 (synaxis-fetch-tests--load "atom-1.0-minimal.xml"))))
+       (synaxis-fetch--process-response buf url)
+       (kill-buffer buf))
+     (let ((id (plist-get (car (synaxis-db-list-entries nil nil)) :id)))
+       (should (equal '("unread") (synaxis-db-get-tags id)))))))
+
 (ert-deftest synaxis-fetch-test-process-200-does-not-clobber-user-title ()
   "Back-fill only applies when feed title is currently NULL."
   (synaxis-fetch-tests--with-tmp
