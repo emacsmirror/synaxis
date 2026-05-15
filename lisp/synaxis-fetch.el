@@ -171,17 +171,16 @@ HEADERS' ETag and Last-Modified are persisted on success."
 
 (defun synaxis-fetch-feed (url)
   "Asynchronously fetch URL via `url-queue-retrieve'.
-No-op if a fetch for URL is already in flight."
+No-op if a fetch for URL is already in flight.
+
+Conditional GET is intentionally NOT sent: `url-http' unconditionally
+calls `url-cache-extract' on a 304 response, which errors when the
+url-cache directory has not been populated (synaxis stores ETags in
+its own DB, not in url-cache).  We still record the response's ETag
+and Last-Modified for a future, custom HTTP path."
   (unless (synaxis-fetch--in-flight-p url)
-    (let* ((feed (synaxis-db-get-feed url))
-           (etag (and feed (plist-get feed :etag)))
-           (lm   (and feed (plist-get feed :last-modified)))
-           (url-request-extra-headers
-            (delq nil
-                  (list (and etag (cons "If-None-Match" etag))
-                        (and lm   (cons "If-Modified-Since" lm)))))
-           (url-queue-parallel-processes synaxis-fetch-max-parallel)
-           (url-queue-timeout synaxis-fetch-timeout))
+    (let ((url-queue-parallel-processes synaxis-fetch-max-parallel)
+          (url-queue-timeout synaxis-fetch-timeout))
       (puthash url t synaxis-fetch--in-flight)
       (url-queue-retrieve url #'synaxis-fetch--callback (list url) t t))))
 
