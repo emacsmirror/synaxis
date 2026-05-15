@@ -15,13 +15,328 @@
 
 ;;; Commentary:
 
-;; SQLite connection, schema, migrations, and CRUD primitives for
-;; feeds, entries, tags, and scrape rules.  All persistent state lives
-;; here; other modules go through this API.
+;; SQLite connection, schema, and CRUD primitives for feeds, entries,
+;; and tags.  All persistent state lives here; other modules go
+;; through this API.
 
 ;;; Code:
 
 (require 'sqlite)
+
+(defvar synaxis-testing nil
+  "Non-nil while a test run is in progress.
+Code that registers global side effects (timers, `kill-emacs-hook'
+entries, auto-save) honours this flag.  Defined here because
+`synaxis-db' is loaded first; `synaxis.el' rebinds the docstring.")
+
+;;; Customisation
+
+(defcustom synaxis-db-file
+  (expand-file-name "synaxis/synaxis.db" user-emacs-directory)
+  "Path to the synaxis SQLite database."
+  :type 'file
+  :group 'synaxis)
+
+;;; Transactions
+
+(defmacro synaxis-db--with-transaction (db &rest body)
+  "Run BODY inside a SQLite transaction on DB; roll back on non-local exit."
+  (declare (indent 1) (debug t))
+  (let ((db-sym (make-symbol "db"))
+        (committed (make-symbol "committed")))
+    `(let ((,db-sym ,db)
+           (,committed nil))
+       (sqlite-transaction ,db-sym)
+       (unwind-protect
+           (prog1 (progn ,@body)
+             (sqlite-commit ,db-sym)
+             (setq ,committed t))
+         (unless ,committed
+           (ignore-errors (sqlite-rollback ,db-sym)))))))
+
+;;; Connection
+
+(defvar synaxis-db--connection nil
+  "Cached SQLite connection, or nil if not yet opened.")
+
+(defconst synaxis-db--schema-statements
+  '("CREATE TABLE IF NOT EXISTS feeds (
+       url           TEXT    PRIMARY KEY,
+       title         TEXT,
+       type          TEXT    NOT NULL DEFAULT 'rss',
+       last_fetched  REAL,
+       last_modified TEXT,
+       etag          TEXT,
+       failures      INTEGER NOT NULL DEFAULT 0,
+       meta          TEXT
+     ) STRICT;"
+    "CREATE TABLE IF NOT EXISTS entries (
+       id           INTEGER PRIMARY KEY,
+       feed_url     TEXT    NOT NULL REFERENCES feeds(url) ON DELETE CASCADE,
+       source_id    TEXT    NOT NULL,
+       title        TEXT    NOT NULL DEFAULT '',
+       link         TEXT,
+       date         REAL    NOT NULL,
+       content      TEXT,
+       content_type TEXT,
+       meta         TEXT,
+       UNIQUE (feed_url, source_id)
+     ) STRICT;"
+    "CREATE INDEX IF NOT EXISTS entries_date ON entries (date DESC);"
+    "CREATE INDEX IF NOT EXISTS entries_feed ON entries (feed_url);"
+    "CREATE TABLE IF NOT EXISTS entry_tags (
+       entry_id INTEGER NOT NULL REFERENCES entries(id) ON DELETE CASCADE,
+       tag      TEXT    NOT NULL,
+       PRIMARY KEY (entry_id, tag)
+     ) STRICT;"
+    "CREATE INDEX IF NOT EXISTS entry_tags_tag ON entry_tags (tag);")
+  "DDL statements applied when bootstrapping a fresh database.")
+
+(defun synaxis-db--bootstrap (db)
+  "Ensure the schema is present in DB.
+Inserts the version row on first creation only."
+  (sqlite-execute db
+                  "CREATE TABLE IF NOT EXISTS schema_version (version INTEGER NOT NULL);")
+  (unless (sqlite-select db "SELECT version FROM schema_version LIMIT 1;")
+    (synaxis-db--with-transaction db
+      (dolist (stmt synaxis-db--schema-statements)
+	(sqlite-execute db stmt))
+      (sqlite-execute db "INSERT INTO schema_version (version) VALUES (1);"))))
+
+(defun synaxis-db--open ()
+  "Open `synaxis-db-file', enable foreign keys, bootstrap schema."
+  (let* ((file (expand-file-name synaxis-db-file))
+         (dir  (file-name-directory file)))
+    (unless (file-directory-p dir)
+      (make-directory dir t))
+    (let ((db (sqlite-open file)))
+      (sqlite-pragma db "foreign_keys = ON")
+      (sqlite-pragma db "journal_mode = WAL")
+      (synaxis-db--bootstrap db)
+      db)))
+
+(defun synaxis-db--ensure-open ()
+  "Return the cached connection, opening it on first call."
+  (or synaxis-db--connection
+      (let ((db (synaxis-db--open)))
+        (unless synaxis-testing
+          (add-hook 'kill-emacs-hook #'synaxis-db-close))
+        (setq synaxis-db--connection db))))
+
+(defun synaxis-db-close ()
+  "Close the cached SQLite connection, if any."
+  (when synaxis-db--connection
+    (ignore-errors (sqlite-close synaxis-db--connection))
+    (setq synaxis-db--connection nil)))
+
+;;; JSON helpers
+
+(defun synaxis-db--encode-meta (plist)
+  "Encode PLIST to a JSON string, or return nil for empty input."
+  (and plist (json-serialize plist)))
+
+(defun synaxis-db--decode-meta (text)
+  "Decode TEXT (JSON) to a plist; nil for empty or missing input."
+  (and text (not (string-empty-p text))
+       (json-parse-string text :object-type 'plist :array-type 'list)))
+
+;;; Feeds
+
+(defun synaxis-db--row-to-feed-plist (row)
+  "Convert ROW (column order matches `synaxis-db--feed-select') to a plist."
+  (pcase-let ((`(,url ,title ,type ,last-fetched ,last-modified ,etag ,failures ,meta) row))
+    (list :url url
+          :title title
+          :type type
+          :last-fetched last-fetched
+          :last-modified last-modified
+          :etag etag
+          :failures failures
+          :meta (synaxis-db--decode-meta meta))))
+
+(defconst synaxis-db--feed-columns
+  "url, title, type, last_fetched, last_modified, etag, failures, meta"
+  "Column list used to project feed rows into plists.")
+
+(defun synaxis-db-add-feed (url &optional plist)
+  "Insert or replace feed URL.
+PLIST may contain `:title', `:type', `:meta'."
+  (let ((db (synaxis-db--ensure-open)))
+    (sqlite-execute
+     db
+     "INSERT INTO feeds (url, title, type, meta) VALUES (?, ?, ?, ?)
+      ON CONFLICT(url) DO UPDATE SET
+        title = excluded.title,
+        type  = excluded.type,
+        meta  = excluded.meta;"
+     (list url
+           (plist-get plist :title)
+           (or (plist-get plist :type) "rss")
+           (synaxis-db--encode-meta (plist-get plist :meta))))))
+
+(defun synaxis-db-remove-feed (url)
+  "Delete the feed at URL.  Cascades to entries and tags."
+  (let ((db (synaxis-db--ensure-open)))
+    (sqlite-execute db "DELETE FROM feeds WHERE url = ?;" (list url))))
+
+(defun synaxis-db-get-feed (url)
+  "Return the feed plist for URL, or nil."
+  (let* ((db (synaxis-db--ensure-open))
+         (row (car (sqlite-select
+                    db
+                    (concat "SELECT " synaxis-db--feed-columns
+                            " FROM feeds WHERE url = ?;")
+                    (list url)))))
+    (and row (synaxis-db--row-to-feed-plist row))))
+
+(defun synaxis-db-list-feeds ()
+  "Return all feeds as plists, ordered alphabetically by title."
+  (let ((db (synaxis-db--ensure-open)))
+    (mapcar #'synaxis-db--row-to-feed-plist
+            (sqlite-select
+             db
+             (concat "SELECT " synaxis-db--feed-columns
+                     " FROM feeds ORDER BY title COLLATE NOCASE ASC, url ASC;")))))
+
+(defun synaxis-db-set-feed-cache-headers (url plist)
+  "Update cache header fields on feed URL from PLIST.
+Recognised keys: `:last-fetched', `:last-modified', `:etag', `:failures'.
+Keys absent or nil leave the corresponding column unchanged."
+  (let ((db (synaxis-db--ensure-open)))
+    (sqlite-execute
+     db
+     "UPDATE feeds
+      SET last_fetched  = COALESCE(?, last_fetched),
+          last_modified = COALESCE(?, last_modified),
+          etag          = COALESCE(?, etag),
+          failures      = COALESCE(?, failures)
+      WHERE url = ?;"
+     (list (plist-get plist :last-fetched)
+           (plist-get plist :last-modified)
+           (plist-get plist :etag)
+           (plist-get plist :failures)
+           url))))
+
+;;; Entries
+
+(defconst synaxis-db--entry-columns
+  "e.id, e.feed_url, e.source_id, e.title, e.link, e.date,
+   e.content, e.content_type, e.meta, f.title"
+  "Column list used to project entry rows into plists (joined with feeds).")
+
+(defun synaxis-db--row-to-entry-plist (row)
+  "Convert ROW (column order matches `synaxis-db--entry-columns') to a plist."
+  (pcase-let ((`(,id ,feed-url ,source-id ,title ,link ,date
+                     ,content ,ctype ,meta ,feed-title)
+               row))
+    (list :id id
+          :feed-url feed-url
+          :feed-title feed-title
+          :source-id source-id
+          :title title
+          :link link
+          :date date
+          :content content
+          :content-type ctype
+          :meta (synaxis-db--decode-meta meta))))
+
+(defun synaxis-db-upsert-entry (plist)
+  "Insert or update an entry described by PLIST.
+Required keys: `:feed-url', `:source-id', `:title', `:date'.
+Optional keys: `:link', `:content', `:content-type', `:meta'.
+Returns the entry's primary key."
+  (let* ((db (synaxis-db--ensure-open))
+         (feed-url  (plist-get plist :feed-url))
+         (source-id (plist-get plist :source-id))
+         (title     (or (plist-get plist :title) ""))
+         (link      (plist-get plist :link))
+         (date      (plist-get plist :date))
+         (content   (plist-get plist :content))
+         (ctype     (plist-get plist :content-type))
+         (meta      (synaxis-db--encode-meta (plist-get plist :meta))))
+    (sqlite-execute
+     db
+     "INSERT INTO entries
+        (feed_url, source_id, title, link, date, content, content_type, meta)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(feed_url, source_id) DO UPDATE SET
+        title        = excluded.title,
+        link         = excluded.link,
+        date         = excluded.date,
+        content      = excluded.content,
+        content_type = excluded.content_type,
+        meta         = excluded.meta;"
+     (list feed-url source-id title link date content ctype meta))
+    (synaxis-db-find-entry feed-url source-id)))
+
+(defun synaxis-db-find-entry (feed-url source-id)
+  "Return the entry id for FEED-URL and SOURCE-ID, or nil."
+  (let* ((db (synaxis-db--ensure-open))
+         (row (car (sqlite-select
+                    db
+                    "SELECT id FROM entries WHERE feed_url = ? AND source_id = ?;"
+                    (list feed-url source-id)))))
+    (and row (car row))))
+
+(defun synaxis-db-get-entry (id)
+  "Return the entry plist for ID, or nil."
+  (let* ((db (synaxis-db--ensure-open))
+         (row (car (sqlite-select
+                    db
+                    (concat "SELECT " synaxis-db--entry-columns
+                            " FROM entries e
+                              JOIN feeds f ON f.url = e.feed_url
+                              WHERE e.id = ?;")
+                    (list id)))))
+    (and row (synaxis-db--row-to-entry-plist row))))
+
+(defun synaxis-db-list-entries (where params &optional limit)
+  "Return entries matching WHERE / PARAMS.
+WHERE is a SQL fragment over aliases `e' (entries) and `f' (feeds);
+nil means no filter.  PARAMS is its bind list.  LIMIT, when non-nil,
+caps the result count.  Results are ordered by date descending."
+  (let* ((db  (synaxis-db--ensure-open))
+         (sql (concat "SELECT " synaxis-db--entry-columns
+                      " FROM entries e
+                        JOIN feeds f ON f.url = e.feed_url
+                        WHERE " (or where "1=1")
+                      " ORDER BY e.date DESC"
+                      (if limit (format " LIMIT %d" limit) "")
+                      ";")))
+    (mapcar #'synaxis-db--row-to-entry-plist
+            (sqlite-select db sql params))))
+
+(defun synaxis-db-delete-entry (id)
+  "Delete the entry with ID.  Cascades to tags."
+  (let ((db (synaxis-db--ensure-open)))
+    (sqlite-execute db "DELETE FROM entries WHERE id = ?;" (list id))))
+
+;;; Tags
+
+(defun synaxis-db-add-tag (entry-id tag)
+  "Add TAG to ENTRY-ID.  Idempotent."
+  (let ((db (synaxis-db--ensure-open)))
+    (sqlite-execute
+     db
+     "INSERT OR IGNORE INTO entry_tags (entry_id, tag) VALUES (?, ?);"
+     (list entry-id tag))))
+
+(defun synaxis-db-remove-tag (entry-id tag)
+  "Remove TAG from ENTRY-ID."
+  (let ((db (synaxis-db--ensure-open)))
+    (sqlite-execute
+     db
+     "DELETE FROM entry_tags WHERE entry_id = ? AND tag = ?;"
+     (list entry-id tag))))
+
+(defun synaxis-db-get-tags (entry-id)
+  "Return the list of tag strings on ENTRY-ID."
+  (let ((db (synaxis-db--ensure-open)))
+    (mapcar #'car
+            (sqlite-select
+             db
+             "SELECT tag FROM entry_tags WHERE entry_id = ?;"
+             (list entry-id)))))
 
 (provide 'synaxis-db)
 ;;; synaxis-db.el ends here
