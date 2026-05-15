@@ -94,10 +94,9 @@ spec never forces an ellipsis."
 ;;; Row formatting
 
 (defun synaxis-search--entry-columns (entry)
-  "Convert ENTRY plist to the column vector used by `tabulated-list-mode'."
-  (let* ((id     (plist-get entry :id))
-         (tags   (and id (synaxis-db-get-tags id)))
-         (unread (member "unread" tags))
+  "Convert ENTRY plist to the column vector used by `tabulated-list-mode'.
+Reads `:unread' from ENTRY rather than re-querying the DB."
+  (let* ((unread (plist-get entry :unread))
          (date   (format-time-string
                   "%Y-%m-%d"
                   (seconds-to-time (or (plist-get entry :date) 0))))
