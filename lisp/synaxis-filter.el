@@ -49,7 +49,8 @@
     (cons from to)))
 
 (defun synaxis-filter--keyword-date (s)
-  "Parse keyword date S (today / yesterday); nil otherwise."
+  "Parse keyword date S; nil otherwise.
+Recognised: today, yesterday, thisweek, thismonth, thisyear."
   (pcase s
     ("today"
      (let* ((d (decode-time))
@@ -64,7 +65,32 @@
                      (decoded-time-year d)
                      (decoded-time-month d)
                      (decoded-time-day d))))
-       (list :from (car bounds) :to (cdr bounds))))))
+       (list :from (car bounds) :to (cdr bounds))))
+    ("thisweek"
+     (let* ((now (current-time))
+            (d   (decode-time now))
+            (dow (decoded-time-weekday d))   ; 0=Sunday..6=Saturday
+            (mondays-back (if (zerop dow) 6 (1- dow)))
+            (monday (time-subtract now (* mondays-back 86400)))
+            (md (decode-time monday))
+            (bounds (synaxis-filter--day-bounds
+                     (decoded-time-year md)
+                     (decoded-time-month md)
+                     (decoded-time-day md))))
+       (list :from (car bounds) :to (float-time now))))
+    ("thismonth"
+     (let* ((now (current-time))
+            (d   (decode-time now))
+            (from (float-time (encode-time 0 0 0 1
+                                           (decoded-time-month d)
+                                           (decoded-time-year d)))))
+       (list :from from :to (float-time now))))
+    ("thisyear"
+     (let* ((now (current-time))
+            (d   (decode-time now))
+            (from (float-time (encode-time 0 0 0 1 1
+                                           (decoded-time-year d)))))
+       (list :from from :to (float-time now))))))
 
 (defun synaxis-filter--absolute-date (s)
   "Parse absolute date S: YYYY, YYYY-MM, or YYYY-MM-DD; nil otherwise.
@@ -126,10 +152,26 @@ Recognised units: s, m, h, d, w, months, y.  nil otherwise."
 
 (defun synaxis-filter-parse-date-spec (s)
   "Parse date spec S into a plist `(:from F :to T)' or nil.
-F and T are float-time bounds; either may be nil (open end)."
-  (and (stringp s)
-       (not (string-empty-p s))
-       (synaxis-filter--simple-date-spec s)))
+F and T are float-time bounds; either may be nil (open end).
+Supports ranges of the form LO..HI, LO.., and ..HI."
+  (cond
+   ((not (stringp s)) nil)
+   ((string-empty-p s) nil)
+   ((string-match "\\`\\(.*\\)\\.\\.\\(.*\\)\\'" s)
+    (let* ((lo-str (match-string 1 s))
+           (hi-str (match-string 2 s))
+           (lo (and (not (string-empty-p lo-str))
+                    (synaxis-filter--simple-date-spec lo-str)))
+           (hi (and (not (string-empty-p hi-str))
+                    (synaxis-filter--simple-date-spec hi-str))))
+      (when (or lo hi
+                ;; both sides empty `..' is meaningless
+                )
+        (let ((from (and lo (plist-get lo :from)))
+              (to   (and hi (plist-get hi :to))))
+          (when (or from to)
+            (list :from from :to to))))))
+   (t (synaxis-filter--simple-date-spec s))))
 
 ;;; Token classification
 
