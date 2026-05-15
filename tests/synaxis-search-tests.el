@@ -35,25 +35,24 @@
     (when unread (synaxis-db-add-tag id "unread"))
     id))
 
-(ert-deftest synaxis-search-test-pp-formats-entry-line ()
+(ert-deftest synaxis-search-test-entry-columns-include-date-and-title ()
   (synaxis-search-tests--with-tmp
    (let* ((id (synaxis-search-tests--add-entry
                "https://example.com/x" "1" "Hello world" 1704164645.0 t))
-          (entry (synaxis-db-get-entry id)))
-     (with-temp-buffer
-       (synaxis-search--pp entry)
-       (let ((text (buffer-substring-no-properties (point-min) (point-max))))
-         (should (string-match-p "2024" text))
-         (should (string-match-p "Hello world" text)))))))
+          (entry (synaxis-db-get-entry id))
+          (cols (synaxis-search--entry-columns entry)))
+     (should (string-match-p "2024" (aref cols 0)))
+     (should (equal "*" (aref cols 1)))
+     (should (string-match-p "Hello world" (aref cols 3))))))
 
-(ert-deftest synaxis-search-test-refresh-populates-ewoc-from-db ()
+(ert-deftest synaxis-search-test-refresh-populates-tabulated-list ()
   (synaxis-search-tests--with-tmp
    (synaxis-search-tests--add-entry "https://example.com/x" "1" "A" 1.0 t)
    (synaxis-search-tests--add-entry "https://example.com/x" "2" "B" 2.0 t)
    (let ((synaxis-search-default-filter ""))
      (synaxis-search))
    (with-current-buffer "*synaxis*"
-     (should (= 2 (length (ewoc-collect synaxis-search--ewoc #'identity)))))))
+     (should (= 2 (length tabulated-list-entries))))))
 
 (ert-deftest synaxis-search-test-current-entry-returns-id-at-point ()
   (synaxis-search-tests--with-tmp
@@ -62,8 +61,7 @@
      (let ((synaxis-search-default-filter ""))
        (synaxis-search))
      (with-current-buffer "*synaxis*"
-       (ewoc-goto-node synaxis-search--ewoc
-                       (ewoc-nth synaxis-search--ewoc 0))
+       (goto-char (point-min))
        (should (equal id (synaxis-search-current-entry)))))))
 
 (ert-deftest synaxis-search-test-toggle-read-removes-unread-tag ()
@@ -73,8 +71,7 @@
      (let ((synaxis-search-default-filter ""))
        (synaxis-search))
      (with-current-buffer "*synaxis*"
-       (ewoc-goto-node synaxis-search--ewoc
-                       (ewoc-nth synaxis-search--ewoc 0))
+       (goto-char (point-min))
        (should (member "unread" (synaxis-db-get-tags id)))
        (synaxis-search-toggle-read)
        (should-not (member "unread" (synaxis-db-get-tags id)))
@@ -98,9 +95,25 @@
      (synaxis-db-remove-tag id "unread"))
    (synaxis-search)
    (with-current-buffer "*synaxis*"
-     (let ((titles (mapcar (lambda (e) (plist-get e :title))
-                           (ewoc-collect synaxis-search--ewoc #'identity))))
+     (let ((titles (mapcar (lambda (e)
+                             (substring-no-properties (aref (cadr e) 3)))
+                           tabulated-list-entries)))
        (should (equal '("Unread") titles))))))
+
+(ert-deftest synaxis-search-test-replace-entry-updates-row-in-place ()
+  (synaxis-search-tests--with-tmp
+   (let ((id (synaxis-search-tests--add-entry
+              "https://example.com/x" "1" "T" 1.0 t)))
+     (let ((synaxis-search-default-filter ""))
+       (synaxis-search))
+     (with-current-buffer "*synaxis*"
+       (goto-char (point-min))
+       ;; Marker column reflects unread state.
+       (should (equal "*" (aref (tabulated-list-get-entry) 1)))
+       (synaxis-db-remove-tag id "unread")
+       (synaxis-search--redraw-current)
+       (goto-char (point-min))
+       (should (equal " " (aref (tabulated-list-get-entry) 1)))))))
 
 (provide 'synaxis-search-tests)
 ;;; synaxis-search-tests.el ends here
