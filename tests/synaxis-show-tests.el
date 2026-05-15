@@ -67,5 +67,57 @@
      (synaxis-show-entry id)
      (should-not (member "unread" (synaxis-db-get-tags id))))))
 
+(ert-deftest synaxis-show-test-walk-next-moves-to-next-peer ()
+  (synaxis-show-tests--with-tmp
+    (synaxis-db-add-feed "https://example.com/n")
+    (let ((ids (cl-loop for i below 3
+                        collect (synaxis-db-upsert-entry
+                                 `(:feed-url "https://example.com/n"
+                                             :source-id ,(format "%d" i)
+                                             :title ,(format "T%d" i)
+                                             :date ,(float i)
+                                             :content "x"
+                                             :content-type "html")))))
+      (synaxis-show-entry (nth 0 ids) ids)
+      (with-current-buffer "*synaxis-show*"
+        (synaxis-show--walk +1)
+        (should (equal (nth 1 ids) synaxis-show--entry-id))
+        (synaxis-show--walk +1)
+        (should (equal (nth 2 ids) synaxis-show--entry-id))))))
+
+(ert-deftest synaxis-show-test-walk-prev-from-first-errors ()
+  (synaxis-show-tests--with-tmp
+    (synaxis-db-add-feed "https://example.com/n")
+    (let ((ids (cl-loop for i below 2
+                        collect (synaxis-db-upsert-entry
+                                 `(:feed-url "https://example.com/n"
+                                             :source-id ,(format "%d" i)
+                                             :title "T" :date ,(float i))))))
+      (synaxis-show-entry (nth 0 ids) ids)
+      (with-current-buffer "*synaxis-show*"
+        (should-error (synaxis-show--walk -1) :type 'user-error)))))
+
+(ert-deftest synaxis-show-test-walk-next-from-last-errors ()
+  (synaxis-show-tests--with-tmp
+    (synaxis-db-add-feed "https://example.com/n")
+    (let ((ids (cl-loop for i below 2
+                        collect (synaxis-db-upsert-entry
+                                 `(:feed-url "https://example.com/n"
+                                             :source-id ,(format "%d" i)
+                                             :title "T" :date ,(float i))))))
+      (synaxis-show-entry (nth 1 ids) ids)
+      (with-current-buffer "*synaxis-show*"
+        (should-error (synaxis-show--walk +1) :type 'user-error)))))
+
+(ert-deftest synaxis-show-test-no-peers-errors ()
+  (synaxis-show-tests--with-tmp
+    (synaxis-db-add-feed "https://example.com/n")
+    (let ((id (synaxis-db-upsert-entry
+               '(:feed-url "https://example.com/n" :source-id "1"
+                           :title "T" :date 1.0))))
+      (synaxis-show-entry id)            ;; no peers passed
+      (with-current-buffer "*synaxis-show*"
+        (should-error (synaxis-show--walk +1) :type 'user-error)))))
+
 (provide 'synaxis-show-tests)
 ;;; synaxis-show-tests.el ends here
