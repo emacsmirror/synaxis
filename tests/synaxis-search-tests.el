@@ -115,17 +115,17 @@
        (goto-char (point-min))
        (should (equal " " (aref (tabulated-list-get-entry) 1)))))))
 
-(ert-deftest synaxis-search-test-set-filter-via-completing-read ()
-  "Calling `synaxis-search-set-filter' interactively pulls from completing-read."
+(ert-deftest synaxis-search-test-set-filter-via-completing-read-multiple ()
+  "Calling `synaxis-search-set-filter' interactively pulls from CRM."
   (synaxis-search-tests--with-tmp
    (synaxis-search-tests--add-entry "https://example.com/x" "1" "T" 1.0 t)
    (let ((synaxis-search-default-filter ""))
      (synaxis-search))
    (with-current-buffer "*synaxis*"
-     (cl-letf (((symbol-function 'completing-read)
-                (lambda (&rest _) "tag:starred")))
+     (cl-letf (((symbol-function 'completing-read-multiple)
+                (lambda (&rest _) (list "tag:starred" "feed:hackaday"))))
        (call-interactively 'synaxis-search-set-filter))
-     (should (equal "tag:starred" synaxis-search--filter)))))
+     (should (equal "tag:starred feed:hackaday" synaxis-search--filter)))))
 
 (provide 'synaxis-search-tests)
 ;;; synaxis-search-tests.el ends here
