@@ -127,5 +127,45 @@
        (call-interactively 'synaxis-search-set-filter))
      (should (equal "tag:starred feed:hackaday" synaxis-search--filter)))))
 
+(ert-deftest synaxis-search-test-tag-entry-uses-completing-read ()
+  (synaxis-search-tests--with-tmp
+   (let ((id (synaxis-search-tests--add-entry
+              "https://example.com/x" "1" "T" 1.0 t)))
+     (let ((synaxis-search-default-filter ""))
+       (synaxis-search))
+     (with-current-buffer "*synaxis*"
+       (goto-char (point-min))
+       (cl-letf (((symbol-function 'completing-read)
+                  (lambda (&rest _) "starred")))
+         (call-interactively 'synaxis-search-tag-entry))
+       (should (member "starred" (synaxis-db-get-tags id)))))))
+
+(ert-deftest synaxis-search-test-untag-entry-uses-completing-read ()
+  (synaxis-search-tests--with-tmp
+   (let ((id (synaxis-search-tests--add-entry
+              "https://example.com/x" "1" "T" 1.0 t)))
+     (synaxis-db-add-tag id "starred")
+     (let ((synaxis-search-default-filter ""))
+       (synaxis-search))
+     (with-current-buffer "*synaxis*"
+       (goto-char (point-min))
+       (cl-letf (((symbol-function 'completing-read)
+                  (lambda (&rest _) "starred")))
+         (call-interactively 'synaxis-search-untag-entry))
+       (should-not (member "starred" (synaxis-db-get-tags id)))
+       (should (member "unread" (synaxis-db-get-tags id)))))))
+
+(ert-deftest synaxis-search-test-untag-entry-errors-when-no-tags ()
+  (synaxis-search-tests--with-tmp
+   (let ((id (synaxis-search-tests--add-entry
+              "https://example.com/x" "1" "T" 1.0 nil)))
+     (ignore id)
+     (let ((synaxis-search-default-filter ""))
+       (synaxis-search))
+     (with-current-buffer "*synaxis*"
+       (goto-char (point-min))
+       (should-error (call-interactively 'synaxis-search-untag-entry)
+                     :type 'user-error)))))
+
 (provide 'synaxis-search-tests)
 ;;; synaxis-search-tests.el ends here
