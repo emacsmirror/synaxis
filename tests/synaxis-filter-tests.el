@@ -262,5 +262,76 @@
   (should (null (synaxis-filter-parse-date-spec "")))
   (should (null (synaxis-filter-parse-date-spec "2024-99-99"))))
 
+;;; Completions
+
+(defmacro synaxis-filter-tests--with-tmp (&rest body)
+  "Run BODY with a fresh synaxis DB."
+  (declare (indent 0) (debug t))
+  `(let* ((dir (make-temp-file "synaxis-filter-test" t))
+          (synaxis-db-file (expand-file-name "test.db" dir))
+          (synaxis-testing t)
+          (synaxis-db--connection nil))
+     (unwind-protect
+         (progn ,@body)
+       (synaxis-db-close)
+       (when (file-directory-p dir)
+         (delete-directory dir t)))))
+
+(ert-deftest synaxis-filter-test-completions-include-static-prefixes ()
+  (synaxis-filter-tests--with-tmp
+   (let ((c (synaxis-filter-completions)))
+     (should (member "tag:" c))
+     (should (member "-tag:" c))
+     (should (member "date:" c))
+     (should (member "limit:" c))
+     (should (member "date:today" c))
+     (should (member "date:thisweek" c)))))
+
+(ert-deftest synaxis-filter-test-completions-include-tag-values ()
+  (synaxis-filter-tests--with-tmp
+   (synaxis-db-add-feed "https://example.com/x")
+   (let ((id (synaxis-db-upsert-entry
+              '(:feed-url "https://example.com/x" :source-id "1"
+                          :title "T" :date 1.0))))
+     (synaxis-db-add-tag id "unread")
+     (synaxis-db-add-tag id "starred"))
+   (let ((c (synaxis-filter-completions)))
+     (should (member "tag:unread" c))
+     (should (member "tag:starred" c))
+     (should (member "-tag:unread" c))
+     (should (member "-tag:starred" c)))))
+
+(ert-deftest synaxis-filter-test-completions-include-feed-titles ()
+  (synaxis-filter-tests--with-tmp
+   (synaxis-db-add-feed "https://example.com/a" '(:title "Alpha"))
+   (synaxis-db-add-feed "https://example.com/b" '(:title "Bravo"))
+   (let ((c (synaxis-filter-completions)))
+     (should (member "feed:Alpha" c))
+     (should (member "feed:Bravo" c))
+     (should (member "-feed:Alpha" c)))))
+
+(ert-deftest synaxis-filter-test-completions-include-entry-titles ()
+  (synaxis-filter-tests--with-tmp
+   (synaxis-db-add-feed "https://example.com/x")
+   (synaxis-db-upsert-entry '(:feed-url "https://example.com/x" :source-id "1"
+                                        :title "Recent Post" :date 100.0))
+   (let ((c (synaxis-filter-completions)))
+     (should (member "title:Recent Post" c)))))
+
+(ert-deftest synaxis-filter-test-completions-respect-entry-title-limit ()
+  (synaxis-filter-tests--with-tmp
+   (synaxis-db-add-feed "https://example.com/x")
+   (dotimes (i 50)
+     (synaxis-db-upsert-entry
+      `(:feed-url "https://example.com/x" :source-id ,(format "%d" i)
+                  :title ,(format "Entry %03d" i) :date ,(float i))))
+   (let* ((synaxis-filter-title-completion-limit 10)
+          (c (synaxis-filter-completions))
+          (titles (seq-filter (lambda (s)
+                                (and (string-prefix-p "title:" s)
+                                     (> (length s) 6)))
+                              c)))
+     (should (= 10 (length titles))))))
+
 (provide 'synaxis-filter-tests)
 ;;; synaxis-filter-tests.el ends here
