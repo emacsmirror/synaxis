@@ -148,6 +148,7 @@ HEADERS' ETag and Last-Modified are persisted on success."
              (entries (plist-get parsed :entries))
              (etag    (cdr (assoc "etag" headers)))
              (lm      (cdr (assoc "last-modified" headers))))
+        (synaxis-db-set-feed-title-if-empty url (plist-get parsed :title))
         (dolist (raw entries)
           (let ((entry (synaxis-fetch--apply-parse-hook raw)))
             (when entry
