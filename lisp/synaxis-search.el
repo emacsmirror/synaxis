@@ -170,7 +170,7 @@ Reads `:unread' from ENTRY rather than re-querying the DB."
         (synaxis-search-mode)
         (setq synaxis-search--filter synaxis-search-default-filter))
       (synaxis-search-refresh))
-    (display-buffer buf)))
+    (pop-to-buffer-same-window buf)))
 
 (defun synaxis-search-refresh ()
   "Re-run the current filter's query and repopulate the buffer."
