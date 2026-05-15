@@ -209,6 +209,54 @@
     (should (= (float-time (encode-time 0 0 0 1 1 2025))
                (plist-get spec :to)))))
 
+(ert-deftest synaxis-filter-test-date-spec-thisweek ()
+  (let ((spec (synaxis-filter-parse-date-spec "thisweek")))
+    (should (numberp (plist-get spec :from)))
+    (should (numberp (plist-get spec :to)))
+    (should (<= (plist-get spec :from) (plist-get spec :to)))
+    ;; Window covers at most 7 days.
+    (should (<= (- (plist-get spec :to) (plist-get spec :from))
+                (* 7 86400)))))
+
+(ert-deftest synaxis-filter-test-date-spec-thismonth ()
+  (let* ((spec (synaxis-filter-parse-date-spec "thismonth"))
+         (d (decode-time))
+         (expected-from
+          (float-time (encode-time 0 0 0 1
+                                   (decoded-time-month d)
+                                   (decoded-time-year d)))))
+    (should (= expected-from (plist-get spec :from)))))
+
+(ert-deftest synaxis-filter-test-date-spec-thisyear ()
+  (let* ((spec (synaxis-filter-parse-date-spec "thisyear"))
+         (d (decode-time))
+         (expected-from
+          (float-time (encode-time 0 0 0 1 1 (decoded-time-year d)))))
+    (should (= expected-from (plist-get spec :from)))))
+
+(ert-deftest synaxis-filter-test-date-spec-range-explicit ()
+  (let ((spec (synaxis-filter-parse-date-spec "2024-01..2024-03")))
+    (should (= (float-time (encode-time 0 0 0 1 1 2024))
+               (plist-get spec :from)))
+    (should (= (float-time (encode-time 0 0 0 1 4 2024))
+               (plist-get spec :to)))))
+
+(ert-deftest synaxis-filter-test-date-spec-range-open-end ()
+  (let ((spec (synaxis-filter-parse-date-spec "2024-01..")))
+    (should (= (float-time (encode-time 0 0 0 1 1 2024))
+               (plist-get spec :from)))
+    (should (null (plist-get spec :to)))))
+
+(ert-deftest synaxis-filter-test-date-spec-range-open-start ()
+  (let ((spec (synaxis-filter-parse-date-spec "..2024-12-31")))
+    (should (null (plist-get spec :from)))
+    (should (= (float-time (encode-time 0 0 0 1 1 2025))
+               (plist-get spec :to)))))
+
+(ert-deftest synaxis-filter-test-date-spec-range-double-dots-only-nil ()
+  "Bare `..' with no bounds is invalid."
+  (should (null (synaxis-filter-parse-date-spec ".."))))
+
 (ert-deftest synaxis-filter-test-date-spec-invalid-nil ()
   (should (null (synaxis-filter-parse-date-spec "garbage")))
   (should (null (synaxis-filter-parse-date-spec "")))
