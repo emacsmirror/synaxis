@@ -141,13 +141,18 @@ Updates the DB, runs hooks, and tracks cache headers and failures."
 
 (defun synaxis-fetch--ingest (url body headers)
   "Parse BODY as a feed for URL and upsert entries.
-HEADERS' ETag and Last-Modified are persisted on success."
+HEADERS' ETag and Last-Modified are persisted on success.
+Tags listed in the feed's `meta.autotags' are applied to each
+fresh insert in addition to `unread'."
   (condition-case _err
-      (let* ((parsed  (synaxis-parse-string
-                       (synaxis-fetch--decode-body body headers)))
-             (entries (plist-get parsed :entries))
-             (etag    (cdr (assoc "etag" headers)))
-             (lm      (cdr (assoc "last-modified" headers))))
+      (let* ((parsed   (synaxis-parse-string
+                        (synaxis-fetch--decode-body body headers)))
+             (entries  (plist-get parsed :entries))
+             (etag     (cdr (assoc "etag" headers)))
+             (lm       (cdr (assoc "last-modified" headers)))
+             (feed     (synaxis-db-get-feed url))
+             (autotags (append (plist-get (plist-get feed :meta) :autotags)
+                               nil)))
         (synaxis-db-set-feed-title-if-empty url (plist-get parsed :title))
         (dolist (raw entries)
           (let ((entry (synaxis-fetch--apply-parse-hook raw)))
@@ -158,6 +163,8 @@ HEADERS' ETag and Last-Modified are persisted on success."
                      (id        (synaxis-db-upsert-entry entry)))
                 (unless existing
                   (synaxis-db-add-tag id "unread")
+                  (dolist (tag autotags)
+                    (synaxis-db-add-tag id tag))
                   (run-hook-with-args 'synaxis-new-entry-hook id))))))
         (synaxis-db-set-feed-cache-headers
          url (list :last-fetched (float-time)
