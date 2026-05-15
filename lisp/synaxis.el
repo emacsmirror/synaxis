@@ -51,6 +51,46 @@
 (require 'synaxis-search)
 (require 'synaxis-show)
 
+;;; Background update timer
+
+(defcustom synaxis-update-interval nil
+  "Seconds between automatic feed updates, or nil to disable.
+Set to e.g. 1800 (30 minutes) to fetch in the background while
+synaxis is open.  Changes take effect the next time `synaxis'
+runs."
+  :type '(choice (const :tag "Disabled" nil)
+                 (integer :tag "Seconds"))
+  :group 'synaxis)
+
+(defvar synaxis--update-timer nil
+  "Active timer scheduled by `synaxis--update-maybe-start-timer'.")
+
+(defun synaxis--update-cancel-timer ()
+  "Cancel any active autoupdate timer."
+  (when synaxis--update-timer
+    (cancel-timer synaxis--update-timer)
+    (setq synaxis--update-timer nil)))
+
+(defun synaxis--update-background ()
+  "Fetch all feeds without messaging.  No-op when no feeds exist."
+  (when (synaxis-db-list-feeds)
+    (synaxis-fetch-all)))
+
+(defun synaxis--update-maybe-start-timer ()
+  "Schedule the autoupdate timer if configured.
+No-op when `synaxis-testing' is non-nil, when
+`synaxis-update-interval' is nil, or when a timer is already
+running.  Always cancels an existing timer first so a re-call is
+idempotent."
+  (synaxis--update-cancel-timer)
+  (when (and (not synaxis-testing)
+             (integerp synaxis-update-interval)
+             (> synaxis-update-interval 0))
+    (setq synaxis--update-timer
+          (run-with-timer synaxis-update-interval
+                          synaxis-update-interval
+                          #'synaxis--update-background))))
+
 ;;; Completing-read wrapper
 
 (defun synaxis-completing-read (prompt collection &rest args)
@@ -63,8 +103,10 @@ the user's completion framework is respected uniformly."
 
 ;;;###autoload
 (defun synaxis ()
-  "Open or switch to the synaxis entry list buffer."
+  "Open or switch to the synaxis entry list buffer.
+Starts the background autoupdate timer when configured."
   (interactive)
+  (synaxis--update-maybe-start-timer)
   (synaxis-search))
 
 ;;;###autoload
@@ -108,7 +150,8 @@ Press `g' in the list buffer to redraw once entries have landed."
 ;;; Unload
 
 (defun synaxis-unload-function ()
-  "Close the database on `unload-feature'."
+  "Cancel the autoupdate timer and close the database on `unload-feature'."
+  (synaxis--update-cancel-timer)
   (synaxis-db-close)
   nil)
 
