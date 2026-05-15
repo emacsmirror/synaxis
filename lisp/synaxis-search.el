@@ -31,6 +31,8 @@
 
 (declare-function synaxis-show-entry "synaxis-show" (entry-id))
 (declare-function synaxis-fetch-all "synaxis-fetch" ())
+(declare-function synaxis-add-feed "synaxis" (url &optional title))
+(declare-function synaxis-remove-feed "synaxis" (url))
 
 ;;; Customisation
 
@@ -128,10 +130,13 @@ spec never forces an ellipsis."
   "r" ("Toggle read"  synaxis-search-toggle-read :stay-open t)
   "+" ("Add tag"      synaxis-search-tag-entry :stay-open t)
   "-" ("Remove tag"   synaxis-search-untag-entry :stay-open t)
+  :group "Feeds"
+  "A" ("Add feed"     synaxis-add-feed)
+  "D" ("Remove feed"  synaxis-remove-feed)
+  "u" ("Update feeds" synaxis-search-update)
   :group "View"
   "s" ("Filter"       synaxis-search-set-filter)
   "g" ("Refresh"      synaxis-search-refresh)
-  "u" ("Update feeds" synaxis-search-update)
   "q" ("Quit"         quit-window))
 
 (define-derived-mode synaxis-search-mode tabulated-list-mode "Synaxis"
