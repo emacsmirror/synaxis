@@ -102,18 +102,18 @@ would otherwise silently normalise out-of-range values)."
     (let ((year  (string-to-number (match-string 1 s)))
           (month (string-to-number (match-string 2 s)))
           (day   (string-to-number (match-string 3 s))))
-      (when (and (<= 1 month 12) (<= 1 day 31))
-        (let ((bounds (synaxis-filter--day-bounds year month day)))
-          (list :from (car bounds) :to (cdr bounds))))))
+      (and (<= 1 month 12) (<= 1 day 31)
+           (let ((bounds (synaxis-filter--day-bounds year month day)))
+             (list :from (car bounds) :to (cdr bounds))))))
    ((string-match "\\`\\([0-9]\\{4\\}\\)-\\([0-9]\\{1,2\\}\\)\\'" s)
     (let ((year  (string-to-number (match-string 1 s)))
           (month (string-to-number (match-string 2 s))))
-      (when (<= 1 month 12)
-        (let* ((from  (float-time (encode-time 0 0 0 1 month year)))
-               (next-month (if (= month 12) 1 (1+ month)))
-               (next-year  (if (= month 12) (1+ year) year))
-               (to (float-time (encode-time 0 0 0 1 next-month next-year))))
-          (list :from from :to to)))))
+      (and (<= 1 month 12)
+           (let* ((from  (float-time (encode-time 0 0 0 1 month year)))
+                  (next-month (if (= month 12) 1 (1+ month)))
+                  (next-year  (if (= month 12) (1+ year) year))
+                  (to (float-time (encode-time 0 0 0 1 next-month next-year))))
+             (list :from from :to to)))))
    ((string-match "\\`\\([0-9]\\{4\\}\\)\\'" s)
     (let* ((year (string-to-number (match-string 1 s)))
            (from (float-time (encode-time 0 0 0 1 1 year)))
@@ -135,15 +135,14 @@ Recognised units: s, m, h, d, w, months, y.  nil otherwise."
 
 (defun synaxis-filter--relative-date (s)
   "Parse relative date S (e.g. `7d', `1y'); nil otherwise."
-  (when (string-match
-         "\\`\\([0-9]+\\)\\(months\\|s\\|m\\|h\\|d\\|w\\|y\\)\\'"
-         s)
-    (let ((secs (synaxis-filter--duration-seconds
-                 (string-to-number (match-string 1 s))
-                 (match-string 2 s))))
-      (and secs
-           (let ((now (float-time)))
-             (list :from (- now secs) :to now))))))
+  (and (string-match
+        "\\`\\([0-9]+\\)\\(months\\|s\\|m\\|h\\|d\\|w\\|y\\)\\'"
+        s)
+       (and-let* ((secs (synaxis-filter--duration-seconds
+                         (string-to-number (match-string 1 s))
+                         (match-string 2 s)))
+                  (now (float-time)))
+         (list :from (- now secs) :to now))))
 
 (defun synaxis-filter--simple-date-spec (s)
   "Dispatch S to one of the simple-date sub-parsers."
@@ -164,14 +163,10 @@ Supports ranges of the form LO..HI, LO.., and ..HI."
            (lo (and (not (string-empty-p lo-str))
                     (synaxis-filter--simple-date-spec lo-str)))
            (hi (and (not (string-empty-p hi-str))
-                    (synaxis-filter--simple-date-spec hi-str))))
-      (when (or lo hi
-                ;; both sides empty `..' is meaningless
-                )
-        (let ((from (and lo (plist-get lo :from)))
-              (to   (and hi (plist-get hi :to))))
-          (when (or from to)
-            (list :from from :to to))))))
+                    (synaxis-filter--simple-date-spec hi-str)))
+           (from (and lo (plist-get lo :from)))
+           (to   (and hi (plist-get hi :to))))
+      (and (or from to) (list :from from :to to))))
    (t (synaxis-filter--simple-date-spec s))))
 
 ;;; Token classification
