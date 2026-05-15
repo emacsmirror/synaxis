@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<rss version="2.0" xmlns:content="http://purl.org/rss/1.0/modules/content/">
+  <channel>
+    <title>RSS Content Encoded</title>
+    <link>https://example.com/</link>
+    <description>d</description>
+    <item>
+      <title>Big Item</title>
+      <link>https://example.com/r/e1</link>
+      <guid isPermaLink="false">tag:example.com,2024:e1</guid>
+      <pubDate>Tue, 02 Jan 2024 03:04:05 GMT</pubDate>
+      <description>short summary</description>
+      <content:encoded><![CDATA[<p>Full HTML content.</p>]]></content:encoded>
+    </item>
+  </channel>
+</rss>

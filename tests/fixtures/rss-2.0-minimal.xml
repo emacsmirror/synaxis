@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<rss version="2.0">
+  <channel>
+    <title>RSS Test</title>
+    <link>https://example.com/</link>
+    <description>desc</description>
+    <item>
+      <title>RSS Item 1</title>
+      <link>https://example.com/r/1</link>
+      <guid>https://example.com/r/1</guid>
+      <pubDate>Tue, 02 Jan 2024 03:04:05 GMT</pubDate>
+      <description>plain desc</description>
+    </item>
+  </channel>
+</rss>

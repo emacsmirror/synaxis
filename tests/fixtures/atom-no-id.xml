@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <title>Atom No-ID</title>
+  <id>tag:example.com,2024:noid-feed</id>
+  <updated>2024-01-02T03:04:05Z</updated>
+  <entry>
+    <title>Untitled Entry</title>
+    <link rel="alternate" href="https://example.com/noid/1"/>
+    <updated>2024-01-02T03:04:05Z</updated>
+    <content type="html">&lt;p&gt;synthesise id from this&lt;/p&gt;</content>
+  </entry>
+</feed>

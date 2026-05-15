@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <title>Atom XHTML</title>
+  <id>tag:example.com,2024:xfeed</id>
+  <updated>2024-02-03T04:05:06Z</updated>
+  <entry>
+    <title>XHTML Entry</title>
+    <id>tag:example.com,2024:x1</id>
+    <link rel="alternate" href="https://example.com/x/1"/>
+    <updated>2024-02-03T04:05:06Z</updated>
+    <content type="xhtml">
+      <div xmlns="http://www.w3.org/1999/xhtml">
+        <p>Hi there.</p>
+      </div>
+    </content>
+  </entry>
+</feed>
