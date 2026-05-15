@@ -78,6 +78,31 @@
        (let ((id (plist-get (car entries) :id)))
          (should (member "unread" (synaxis-db-get-tags id))))))))
 
+(ert-deftest synaxis-fetch-test-process-200-back-fills-feed-title ()
+  "First successful fetch sets the feed's title from the parsed `<title>'."
+  (synaxis-fetch-tests--with-tmp
+   (let* ((url "https://example.com/atom")
+          (buf (synaxis-fetch-tests--response
+                "200 OK" nil
+                (synaxis-fetch-tests--load "atom-1.0-minimal.xml"))))
+     (synaxis-fetch--process-response buf url)
+     (kill-buffer buf)
+     (should (equal "Atom Test Feed"
+                    (plist-get (synaxis-db-get-feed url) :title))))))
+
+(ert-deftest synaxis-fetch-test-process-200-does-not-clobber-user-title ()
+  "Back-fill only applies when feed title is currently NULL."
+  (synaxis-fetch-tests--with-tmp
+   (let ((url "https://example.com/atom"))
+     (synaxis-db-add-feed url '(:title "My Feed"))
+     (let ((buf (synaxis-fetch-tests--response
+                 "200 OK" nil
+                 (synaxis-fetch-tests--load "atom-1.0-minimal.xml"))))
+       (synaxis-fetch--process-response buf url)
+       (kill-buffer buf))
+     (should (equal "My Feed"
+                    (plist-get (synaxis-db-get-feed url) :title))))))
+
 (ert-deftest synaxis-fetch-test-process-200-stores-etag-and-last-modified ()
   (synaxis-fetch-tests--with-tmp
    (let* ((url "https://example.com/atom")

@@ -93,6 +93,22 @@
      (should (equal (plist-get feed :last-modified) "Tue, 02 Jan 2024 03:04:05 GMT"))
      (should (equal (plist-get feed :failures) 2)))))
 
+(ert-deftest synaxis-db-test-set-feed-title-if-empty-fills-null ()
+  "Back-fill applies when current title is NULL."
+  (synaxis-db-tests--with-tmp
+   (synaxis-db-add-feed "https://example.com/t1")
+   (synaxis-db-set-feed-title-if-empty "https://example.com/t1" "Discovered")
+   (should (equal "Discovered"
+                  (plist-get (synaxis-db-get-feed "https://example.com/t1") :title)))))
+
+(ert-deftest synaxis-db-test-set-feed-title-if-empty-preserves-existing ()
+  "Back-fill is a no-op when a title is already set."
+  (synaxis-db-tests--with-tmp
+   (synaxis-db-add-feed "https://example.com/t2" '(:title "User Title"))
+   (synaxis-db-set-feed-title-if-empty "https://example.com/t2" "Other")
+   (should (equal "User Title"
+                  (plist-get (synaxis-db-get-feed "https://example.com/t2") :title)))))
+
 ;;; Entries
 
 (ert-deftest synaxis-db-test-upsert-entry-insert-and-update ()
