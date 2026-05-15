@@ -36,8 +36,9 @@
 
 ;;; Customisation
 
-(defcustom synaxis-search-default-filter "+unread"
-  "Initial filter for the list buffer."
+(defcustom synaxis-search-default-filter "tag:unread"
+  "Initial filter for the list buffer.
+See `synaxis-filter-parse' for the syntax."
   :type 'string
   :group 'synaxis)
 
