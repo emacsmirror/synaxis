@@ -97,7 +97,7 @@ spec never forces an ellipsis."
   "Convert ENTRY plist to the column vector used by `tabulated-list-mode'."
   (let* ((id     (plist-get entry :id))
          (tags   (and id (synaxis-db-get-tags id)))
-         (unread (and (member "unread" tags) t))
+         (unread (member "unread" tags))
          (date   (format-time-string
                   "%Y-%m-%d"
                   (seconds-to-time (or (plist-get entry :date) 0))))
@@ -191,8 +191,8 @@ spec never forces an ellipsis."
       (let ((header (format "synaxis  [%s]  %d entries"
                             (or synaxis-search--filter "")
                             (length entries))))
-        (setq mode-line-buffer-identification
-              (list (propertize header 'face 'mode-line-buffer-id))))
+        (setq-local mode-line-buffer-identification
+                    (list (propertize header 'face 'mode-line-buffer-id))))
       (synaxis-tl-print t))))
 
 (defun synaxis-search-current-entry ()
