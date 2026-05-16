@@ -189,14 +189,17 @@ content do not collide."
                  return (dom-attr l 'href))
         (and links (dom-attr (car links) 'href)))))
 
-(defun synaxis-parse--atom-entry (item)
-  "Convert Atom entry ITEM (DOM node) to an entry plist."
+(defun synaxis-parse--atom-entry (item base)
+  "Convert Atom entry ITEM (DOM node) to an entry plist.
+BASE is the absolute base URL against which a relative entry link
+is resolved (nil leaves the raw href in place)."
   (let* ((title (synaxis-parse--text-node (car (dom-by-tag item 'title))))
-         (id    (synaxis-parse--text-node (car (dom-by-tag item 'id))))
-         (link  (synaxis-parse--atom-link item))
-         (date  (synaxis-parse--decode-date
-                 (or (synaxis-parse--text-node (car (dom-by-tag item 'updated)))
-                     (synaxis-parse--text-node (car (dom-by-tag item 'published))))))
+         (id (synaxis-parse--text-node (car (dom-by-tag item 'id))))
+         (raw (synaxis-parse--atom-link item))
+         (link (or (synaxis-parse--resolve-url base raw) raw))
+         (date (synaxis-parse--decode-date
+                (or (synaxis-parse--text-node (car (dom-by-tag item 'updated)))
+                    (synaxis-parse--text-node (car (dom-by-tag item 'published))))))
          (cnode (or (car (dom-by-tag item 'content))
                     (car (dom-by-tag item 'summary))))
          (cplist (and cnode (synaxis-parse--atom-text-container cnode))))
@@ -206,27 +209,33 @@ content do not collide."
                   :date date)
             cplist)))
 
-(defun synaxis-parse--from-atom (dom)
-  "Parse DOM as an Atom 1.0 feed."
+(defun synaxis-parse--from-atom (dom &optional feed-url)
+  "Parse DOM as an Atom 1.0 feed.
+FEED-URL is the absolute URL of the feed itself; entry links are
+resolved against it."
   (list :type 'atom
         :title (synaxis-parse--text-node (car (dom-by-tag dom 'title)))
         :entries (synaxis-parse--ensure-source-ids
-                  (mapcar #'synaxis-parse--atom-entry
-                          (dom-by-tag dom 'entry)))))
+                  (cl-loop for entry in (dom-by-tag dom 'entry)
+                           collect (synaxis-parse--atom-entry entry feed-url))
+                  feed-url)))
 
 ;;; RSS 2.0 adapter
 
-(defun synaxis-parse--rss-item (item)
-  "Convert RSS 2.0 ITEM (DOM node) to an entry plist."
-  (let* ((title    (synaxis-parse--text-node (car (dom-by-tag item 'title))))
-         (link     (synaxis-parse--text-node (car (dom-by-tag item 'link))))
-         (guid     (synaxis-parse--text-node (car (dom-by-tag item 'guid))))
-         (date     (synaxis-parse--decode-date
-                    (synaxis-parse--text-node (car (dom-by-tag item 'pubDate)))))
-         (encoded  (car (dom-by-tag item 'encoded)))
-         (desc     (car (dom-by-tag item 'description)))
-         (cnode    (or encoded desc))
-         (content  (and cnode (synaxis-parse--text-node cnode))))
+(defun synaxis-parse--rss-item (item base)
+  "Convert RSS 2.0 ITEM (DOM node) to an entry plist.
+BASE is the absolute base URL against which a relative link is
+resolved (nil leaves the raw link in place)."
+  (let* ((title (synaxis-parse--text-node (car (dom-by-tag item 'title))))
+         (raw (synaxis-parse--text-node (car (dom-by-tag item 'link))))
+         (link (or (synaxis-parse--resolve-url base raw) raw))
+         (guid (synaxis-parse--text-node (car (dom-by-tag item 'guid))))
+         (date (synaxis-parse--decode-date
+                (synaxis-parse--text-node (car (dom-by-tag item 'pubDate)))))
+         (encoded (car (dom-by-tag item 'encoded)))
+         (desc (car (dom-by-tag item 'description)))
+         (cnode (or encoded desc))
+         (content (and cnode (synaxis-parse--text-node cnode))))
     (list :title (or title "")
           :source-id (or guid link)
           :link link
@@ -234,8 +243,9 @@ content do not collide."
           :content content
           :content-type (and content "html"))))
 
-(defun synaxis-parse--from-rss (dom)
-  "Parse DOM as an RSS 2.0 feed."
+(defun synaxis-parse--from-rss (dom &optional feed-url)
+  "Parse DOM as an RSS 2.0 feed.
+FEED-URL resolves protocol- or page-relative item links."
   (let* ((channel (car (dom-by-tag dom 'channel)))
          (title (and channel
                      (synaxis-parse--text-node
@@ -243,20 +253,24 @@ content do not collide."
     (list :type 'rss
           :title title
           :entries (synaxis-parse--ensure-source-ids
-                    (mapcar #'synaxis-parse--rss-item
-                            (dom-by-tag dom 'item))))))
+                    (cl-loop for item in (dom-by-tag dom 'item)
+                             collect (synaxis-parse--rss-item item feed-url))
+                    feed-url))))
 
 ;;; RSS 1.0 / RDF adapter
 
-(defun synaxis-parse--rss1-item (item)
-  "Convert RSS 1.0 ITEM (DOM node) to an entry plist."
+(defun synaxis-parse--rss1-item (item base)
+  "Convert RSS 1.0 ITEM (DOM node) to an entry plist.
+BASE is the absolute base URL against which a relative link is
+resolved (nil leaves the raw link in place)."
   (let* ((title (synaxis-parse--text-node (car (dom-by-tag item 'title))))
-         (link  (synaxis-parse--text-node (car (dom-by-tag item 'link))))
+         (raw (synaxis-parse--text-node (car (dom-by-tag item 'link))))
+         (link (or (synaxis-parse--resolve-url base raw) raw))
          (about (dom-attr item 'rdf:about))
-         (date  (synaxis-parse--decode-date
-                 (or (synaxis-parse--text-node (car (dom-by-tag item 'date)))
-                     (synaxis-parse--text-node (car (dom-by-tag item 'pubDate))))))
-         (desc  (synaxis-parse--text-node (car (dom-by-tag item 'description)))))
+         (date (synaxis-parse--decode-date
+                (or (synaxis-parse--text-node (car (dom-by-tag item 'date)))
+                    (synaxis-parse--text-node (car (dom-by-tag item 'pubDate))))))
+         (desc (synaxis-parse--text-node (car (dom-by-tag item 'description)))))
     (list :title (or title "")
           :source-id (or about link)
           :link link
@@ -264,8 +278,9 @@ content do not collide."
           :content desc
           :content-type (and desc "html"))))
 
-(defun synaxis-parse--from-rss1 (dom)
-  "Parse DOM as an RSS 1.0 / RDF feed."
+(defun synaxis-parse--from-rss1 (dom &optional feed-url)
+  "Parse DOM as an RSS 1.0 / RDF feed.
+FEED-URL resolves protocol- or page-relative item links."
   (let* ((channel (car (dom-by-tag dom 'channel)))
          (title (and channel
                      (synaxis-parse--text-node
@@ -273,20 +288,24 @@ content do not collide."
     (list :type 'rss1
           :title title
           :entries (synaxis-parse--ensure-source-ids
-                    (mapcar #'synaxis-parse--rss1-item
-                            (dom-by-tag dom 'item))))))
+                    (cl-loop for item in (dom-by-tag dom 'item)
+                             collect (synaxis-parse--rss1-item item feed-url))
+                    feed-url))))
 
 ;;; JSON Feed adapter
 
-(defun synaxis-parse--json-item (item)
-  "Convert a JSON Feed ITEM plist to a synaxis entry plist."
-  (let* ((id      (plist-get item :id))
-         (url     (plist-get item :url))
-         (title   (plist-get item :title))
-         (date    (synaxis-parse--decode-date
-                   (plist-get item :date_published)))
-         (html    (plist-get item :content_html))
-         (text    (plist-get item :content_text)))
+(defun synaxis-parse--json-item (item base)
+  "Convert a JSON Feed ITEM plist to a synaxis entry plist.
+BASE is the absolute base URL against which a relative item URL is
+resolved (nil leaves the URL unchanged)."
+  (let* ((id (plist-get item :id))
+         (raw (plist-get item :url))
+         (url (or (synaxis-parse--resolve-url base raw) raw))
+         (title (plist-get item :title))
+         (date (synaxis-parse--decode-date
+                (plist-get item :date_published)))
+         (html (plist-get item :content_html))
+         (text (plist-get item :content_text)))
     (list :title (or title "")
           :source-id (and id (format "%s" id))
           :link url
@@ -294,38 +313,44 @@ content do not collide."
           :content (or html text)
           :content-type (cond (html "html") (text "text")))))
 
-(defun synaxis-parse--from-json (object)
-  "Parse OBJECT (a JSON Feed top-level plist) into a feed plist."
+(defun synaxis-parse--from-json (object &optional feed-url)
+  "Parse OBJECT (a JSON Feed top-level plist) into a feed plist.
+FEED-URL resolves protocol- or page-relative item URLs."
   (list :type 'json
         :title (plist-get object :title)
         :entries (synaxis-parse--ensure-source-ids
-                  (mapcar #'synaxis-parse--json-item
-                          (plist-get object :items)))))
+                  (cl-loop for item in (plist-get object :items)
+                           collect (synaxis-parse--json-item item feed-url))
+                  feed-url)))
 
 ;;; Public entry points
 
-(defun synaxis-parse-buffer ()
-  "Parse the current buffer as a feed.  Return a feed plist."
+(defun synaxis-parse-buffer (&optional feed-url)
+  "Parse the current buffer as a feed.  Return a feed plist.
+FEED-URL, when non-nil, is used to resolve protocol- and
+page-relative entry links and to seed `:source-id' synthesis."
   (let ((type (synaxis-parse--detect-format-buffer)))
     (pcase type
       ('json
        (save-excursion
          (goto-char (point-min))
          (synaxis-parse--from-json
-          (json-parse-buffer :object-type 'plist :array-type 'list))))
+          (json-parse-buffer :object-type 'plist :array-type 'list)
+          feed-url)))
       (_
        (let ((dom (libxml-parse-xml-region (point-min) (point-max))))
          (pcase-exhaustive type
-           ('atom (synaxis-parse--from-atom dom))
-           ('rss  (synaxis-parse--from-rss dom))
-           ('rss1 (synaxis-parse--from-rss1 dom))))))))
+           ('atom (synaxis-parse--from-atom dom feed-url))
+           ('rss  (synaxis-parse--from-rss  dom feed-url))
+           ('rss1 (synaxis-parse--from-rss1 dom feed-url))))))))
 
-(defun synaxis-parse-string (s)
-  "Parse string S as a feed.  Return a feed plist."
+(defun synaxis-parse-string (s &optional feed-url)
+  "Parse string S as a feed.  Return a feed plist.
+FEED-URL is forwarded to `synaxis-parse-buffer'."
   (with-temp-buffer
     (set-buffer-multibyte t)
     (insert s)
-    (synaxis-parse-buffer)))
+    (synaxis-parse-buffer feed-url)))
 
 (provide 'synaxis-parse)
 ;;; synaxis-parse.el ends here
