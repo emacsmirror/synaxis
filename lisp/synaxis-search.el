@@ -61,12 +61,12 @@ integer widths are absolute.")
 ;;; Faces
 
 (defface synaxis-search-unread-face
-  '((t :weight bold))
+  '((t :inherit font-lock-keyword-face :weight bold))
   "Face for unread entry titles."
   :group 'synaxis)
 
 (defface synaxis-search-read-face
-  '((t :inherit shadow))
+  '((t :inherit font-lock-comment-face))
   "Face for already-read entry titles."
   :group 'synaxis)
 
@@ -76,8 +76,15 @@ integer widths are absolute.")
   :group 'synaxis)
 
 (defface synaxis-search-date-face
-  '((t :inherit shadow))
+  '((t :inherit font-lock-comment-face))
   "Face for the date column."
+  :group 'synaxis)
+
+(defface synaxis-search-tag-face
+  '((t :inherit font-lock-constant-face))
+  "Default face for entry tags in the list buffer.
+Per-tag faces from the registry (set via `synaxis-db-set-tag-face')
+override this default."
   :group 'synaxis)
 
 ;;; Buffer-local state
@@ -111,12 +118,14 @@ Tag-face changes made while the buffer is open take effect on `g'.")
 
 (defun synaxis-search--render-tags (tag-list)
   "Render TAG-LIST as a propertized cell, excluding `unread'.
-Each tag picks up its face from `synaxis-search--tag-face-cache'."
+Each tag picks up its face from `synaxis-search--tag-face-cache'
+when set, otherwise falls back to `synaxis-search-tag-face'."
   (mapconcat
    (lambda (tag)
-     (let ((face (and synaxis-search--tag-face-cache
-                      (gethash tag synaxis-search--tag-face-cache))))
-       (if face (propertize tag 'face face) tag)))
+     (let ((face (or (and synaxis-search--tag-face-cache
+                          (gethash tag synaxis-search--tag-face-cache))
+                     'synaxis-search-tag-face)))
+       (propertize tag 'face face)))
    (cl-remove "unread" (sort (copy-sequence tag-list) #'string<)
               :test #'string=)
    " "))
