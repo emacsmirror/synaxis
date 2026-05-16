@@ -430,11 +430,15 @@ CALLBACK receives the augmented entry list.  When RULES lacks
 (defvar synaxis-new-entry-hook)
 
 (defun synaxis-scrape--fetch-html (url)
-  "Synchronously fetch URL and return its decoded HTML body."
-  (let* ((url-request-extra-headers synaxis-http-request-headers)
-         (buf (url-retrieve-synchronously url t t)))
-    (unwind-protect (synaxis-scrape--decode-html buf)
-      (when (buffer-live-p buf) (kill-buffer buf)))))
+  "Synchronously fetch URL and return its decoded HTML body.
+401s from the server are surfaced as the response body rather than
+triggering Emacs's interactive auth prompt."
+  (let ((url-request-extra-headers synaxis-http-request-headers))
+    (cl-letf (((symbol-function 'url-get-authentication)
+               (lambda (&rest _) nil)))
+      (let ((buf (url-retrieve-synchronously url t t)))
+        (unwind-protect (synaxis-scrape--decode-html buf)
+          (when (buffer-live-p buf) (kill-buffer buf)))))))
 
 (defun synaxis-scrape--save-entries (url entries)
   "Upsert ENTRIES under feed URL; fire `synaxis-new-entry-hook' for inserts."
@@ -561,19 +565,23 @@ per-article content (capped at 5 items for test mode), and pops
 
 (defun synaxis-scrape--expand-sync-test (entries rules)
   "Synchronously expand per-article content for test mode.
-Returns ENTRIES with `:content' filled when `:content-selector' is set."
+Returns ENTRIES with `:content' filled when `:content-selector' is set.
+Inhibits Emacs's auth prompt on 401 responses."
   (if (not (plist-get rules :content-selector))
       entries
-    (mapcar
-     (lambda (e)
-       (condition-case nil
-           (let* ((buf (url-retrieve-synchronously
-                        (plist-get e :link) t t))
-                  (content (synaxis-scrape--apply-content buf rules)))
-             (when (buffer-live-p buf) (kill-buffer buf))
-             (if content (plist-put e :content content) e))
-         (error e)))
-     entries)))
+    (cl-letf (((symbol-function 'url-get-authentication)
+               (lambda (&rest _) nil)))
+      (mapcar
+       (lambda (e)
+         (condition-case nil
+             (let* ((url-request-extra-headers synaxis-http-request-headers)
+                    (buf (url-retrieve-synchronously
+                          (plist-get e :link) t t))
+                    (content (synaxis-scrape--apply-content buf rules)))
+               (when (buffer-live-p buf) (kill-buffer buf))
+               (if content (plist-put e :content content) e))
+           (error e)))
+       entries))))
 
 (provide 'synaxis-scrape)
 ;;; synaxis-scrape.el ends here
