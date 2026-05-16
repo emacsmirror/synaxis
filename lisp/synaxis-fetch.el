@@ -63,11 +63,6 @@ so consent gates are skipped on the major CMPs.  Adjust
 Each function takes one entry plist and must return a (possibly
 modified) plist, or nil to skip the entry.")
 
-(defvar synaxis-new-entry-hook nil
-  "Functions run when a brand-new entry is inserted.
-Each function takes the new entry's id.  Not called when an existing
-entry is updated.")
-
 ;;; In-flight tracking
 
 (defvar synaxis-fetch--in-flight (make-hash-table :test 'equal)
@@ -111,23 +106,14 @@ lowercased keys), and `:body' (string)."
               :headers (nreverse headers)
               :body body)))))
 
-(defun synaxis-fetch--decode-body (body _headers)
-  "Return BODY as a multibyte string for parsing.
-v0.1 assumes UTF-8 for unibyte input and passes multibyte through."
-  (if (multibyte-string-p body)
-      body
-    (decode-coding-string body 'utf-8)))
-
 ;;; Hook plumbing
 
 (defun synaxis-fetch--apply-parse-hook (entry)
   "Pass ENTRY through `synaxis-new-entry-parse-hook'.
 Each hook function may return a modified plist or nil to skip."
-  (cl-loop with current = entry
-           for fn in synaxis-new-entry-parse-hook
-           while current
-           do (setq current (funcall fn current))
-           finally return current))
+  (seq-reduce (lambda (e fn) (and e (funcall fn e)))
+              synaxis-new-entry-parse-hook
+              entry))
 
 ;;; Top-level pipeline
 
@@ -156,6 +142,11 @@ Updates the DB, runs hooks, and tracks cache headers and failures."
      url (list :last-fetched (float-time)
                :failures failures))))
 
+(defun synaxis-fetch--body-as-string (body)
+  "Return BODY as a multibyte string, decoding unibyte as UTF-8."
+  (if (multibyte-string-p body) body
+    (decode-coding-string body 'utf-8)))
+
 (defun synaxis-fetch--ingest (url body headers)
   "Parse BODY as a feed for URL and upsert entries.
 HEADERS' ETag and Last-Modified are persisted on success.
@@ -163,30 +154,19 @@ Tags listed in the feed's `meta.autotags' are applied to each
 fresh insert in addition to `unread'."
   (condition-case _err
       (let* ((parsed   (synaxis-parse-string
-                        (synaxis-fetch--decode-body body headers)))
-             (entries  (plist-get parsed :entries))
-             (etag     (cdr (assoc "etag" headers)))
-             (lm       (cdr (assoc "last-modified" headers)))
+                        (synaxis-fetch--body-as-string body)))
              (feed     (synaxis-db-get-feed url))
              (autotags (append (plist-get (plist-get feed :meta) :autotags)
                                nil)))
         (synaxis-db-set-feed-title-if-empty url (plist-get parsed :title))
-        (dolist (raw entries)
-          (let ((entry (synaxis-fetch--apply-parse-hook raw)))
-            (when entry
-              (setq entry (plist-put entry :feed-url url))
-              (let* ((source-id (plist-get entry :source-id))
-                     (existing  (synaxis-db-find-entry url source-id))
-                     (id        (synaxis-db-upsert-entry entry)))
-                (unless existing
-                  (synaxis-db-add-tag id "unread")
-                  (dolist (tag autotags)
-                    (synaxis-db-add-tag id tag))
-                  (run-hook-with-args 'synaxis-new-entry-hook id))))))
+        (cl-loop for raw in (plist-get parsed :entries)
+                 for entry = (synaxis-fetch--apply-parse-hook raw)
+                 when entry
+                 do (synaxis-db-upsert-with-tags url autotags entry))
         (synaxis-db-set-feed-cache-headers
          url (list :last-fetched (float-time)
-                   :etag etag
-                   :last-modified lm
+                   :etag (cdr (assoc "etag" headers))
+                   :last-modified (cdr (assoc "last-modified" headers))
                    :failures 0)))
     (error
      (synaxis-fetch--record-failure url))))
