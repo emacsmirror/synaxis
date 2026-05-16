@@ -29,7 +29,7 @@ clean:
 load: clean
 	@emacsclient --eval "(progn \
 	  (add-to-list 'load-path \"$(CURDIR)/lisp\") \
-	  (dolist (sym '(synaxis-search-mode-map synaxis-show-mode-map)) \
+	  (dolist (sym '(synaxis-search-mode-map synaxis-show-mode-map synaxis-edit-map)) \
 	    (when (boundp sym) (makunbound sym))))" > /dev/null
 	@for f in $(LISP); do \
 	  emacsclient --eval "(load-file \"$(CURDIR)/$$f\")" > /dev/null || \

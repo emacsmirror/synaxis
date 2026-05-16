@@ -33,6 +33,7 @@
 (declare-function synaxis-fetch-all "synaxis-fetch" ())
 (declare-function synaxis-add-feed "synaxis" (url &optional title))
 (declare-function synaxis-remove-feed "synaxis" (url))
+(declare-function synaxis-edit-feed "synaxis-edit" (&optional url))
 
 (defvar crm-separator)
 
@@ -194,6 +195,7 @@ so the format reflects the current window size."
   :group "Feeds"
   "A" ("Add feed"     synaxis-add-feed)
   "D" ("Remove feed"  synaxis-remove-feed)
+  "E" ("Edit feed"    synaxis-search-edit-feed)
   "u" ("Update feeds" synaxis-search-update)
   :group "View"
   "l" ("Filter"       synaxis-search-set-filter)
@@ -382,6 +384,18 @@ completion against `synaxis-filter-completions'."
    (list (synaxis-search--read-filter (or synaxis-search--filter ""))))
   (setq synaxis-search--filter filter)
   (synaxis-search-refresh))
+
+(defun synaxis-search-edit-feed ()
+  "Open `synaxis-edit-feed' on the feed of the entry at point.
+With point on no row, falls back to `synaxis-edit-feed's prompt."
+  (interactive)
+  (require 'synaxis-edit)
+  (let* ((id (synaxis-search-current-entry))
+         (entry (and id (synaxis-db-get-entry id)))
+         (url (and entry (plist-get entry :feed-url))))
+    (if url
+        (synaxis-edit-feed url)
+      (call-interactively 'synaxis-edit-feed))))
 
 (defun synaxis-search-update ()
   "Kick off `synaxis-fetch-all'.  Press `g' to refresh once it finishes."
