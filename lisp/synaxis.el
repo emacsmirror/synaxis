@@ -207,6 +207,42 @@ PROMPT, COLLECTION, and ARGS are passed through.  Defined here so
 the user's completion framework is respected uniformly."
   (apply #'completing-read prompt collection args))
 
+;;; Scrape feed creation
+
+(declare-function synaxis-db-add-scrape-rule "synaxis-db" (url plist))
+
+(defconst synaxis-create-feed--rule-keys
+  '(:url-selector :url-pattern :content-selector :content-cleanup
+                  :title-cleanup :date-selector :date-format :limit)
+  "Keyword arguments passed straight to `synaxis-db-add-scrape-rule'.")
+
+(defun synaxis-create-feed--split (args)
+  "Split ARGS plist into (FEED-PLIST . RULE-PLIST)."
+  (let (feed rule)
+    (cl-loop for (k v) on args by #'cddr do
+             (if (memq k synaxis-create-feed--rule-keys)
+                 (setq rule (plist-put rule k v))
+               (setq feed (plist-put feed k v))))
+    (cons feed rule)))
+
+;;;###autoload
+(defun synaxis-create-feed (url &rest rules)
+  "Register URL as a scrape feed with RULES (a keyword plist).
+Required: :url-selector.  Optional feed-level keys: :title, :tags.
+Optional rule keys: :url-pattern, :content-selector, :content-cleanup,
+:title-cleanup, :date-selector, :date-format, :limit."
+  (unless (plist-get rules :url-selector)
+    (user-error "synaxis-create-feed: missing :url-selector"))
+  (pcase-let* ((`(,feed-args . ,rule-args) (synaxis-create-feed--split rules))
+               (title (plist-get feed-args :title))
+               (tags  (plist-get feed-args :tags)))
+    (synaxis-db-add-feed
+     url (append (and title `(:title ,title))
+                 '(:type "scrape")
+                 (and tags `(:meta (:autotags ,(vconcat tags))))))
+    (synaxis-db-add-scrape-rule url rule-args)
+    (message "synaxis: scrape feed registered %s" url)))
+
 ;;; Top-level commands
 
 ;;;###autoload
