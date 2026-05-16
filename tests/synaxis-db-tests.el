@@ -132,7 +132,8 @@
      ;; Now reopen via the synaxis bootstrap, which should migrate to v2.
      (setq synaxis-db--connection nil)
      (let ((db (synaxis-db--ensure-open)))
-       (should (= 2 (caar (sqlite-select db "SELECT version FROM schema_version;"))))
+       (should (= synaxis-db--schema-target-version
+                  (caar (sqlite-select db "SELECT version FROM schema_version;"))))
        (should (equal '(("rust") ("unread"))
                       (sqlite-select
                        db "SELECT tag FROM tags ORDER BY tag;")))
@@ -361,6 +362,59 @@
      (synaxis-db-delete-entry id)
      (should-not (synaxis-db-get-entry id))
      (should-not (synaxis-db-get-tags id)))))
+
+;;; Scrape rules CRUD
+
+(ert-deftest synaxis-db-test-scrape-rule-round-trip ()
+  "Add then read back every supported scrape-rule field."
+  (synaxis-db-tests--with-tmp
+   (synaxis-db-add-feed "https://example.com/sc" '(:type "scrape"))
+   (synaxis-db-add-scrape-rule
+    "https://example.com/sc"
+    '(:url-selector     "h2 a"
+                        :url-pattern      "/post/"
+                        :content-selector "article.post"
+                        :content-cleanup  ".ads"
+                        :title-cleanup    " - Site"
+                        :date-selector    "time"
+                        :date-format      "%Y-%m-%d"
+                        :limit            5))
+   (let ((r (synaxis-db-get-scrape-rule "https://example.com/sc")))
+     (should (equal "h2 a"           (plist-get r :url-selector)))
+     (should (equal "/post/"         (plist-get r :url-pattern)))
+     (should (equal "article.post"   (plist-get r :content-selector)))
+     (should (equal ".ads"           (plist-get r :content-cleanup)))
+     (should (equal " - Site"        (plist-get r :title-cleanup)))
+     (should (equal "time"           (plist-get r :date-selector)))
+     (should (equal "%Y-%m-%d"       (plist-get r :date-format)))
+     (should (eq 5                   (plist-get r :limit))))))
+
+(ert-deftest synaxis-db-test-scrape-rule-replace-on-conflict ()
+  "Re-adding a rule for the same feed updates rather than errors."
+  (synaxis-db-tests--with-tmp
+   (synaxis-db-add-feed "https://example.com/sc" '(:type "scrape"))
+   (synaxis-db-add-scrape-rule "https://example.com/sc"
+                               '(:url-selector "a"))
+   (synaxis-db-add-scrape-rule "https://example.com/sc"
+                               '(:url-selector "h2 a"))
+   (should (equal "h2 a"
+                  (plist-get (synaxis-db-get-scrape-rule
+                              "https://example.com/sc")
+                             :url-selector)))))
+
+(ert-deftest synaxis-db-test-scrape-rule-nil-for-unknown ()
+  (synaxis-db-tests--with-tmp
+   (should-not (synaxis-db-get-scrape-rule "https://nope/"))))
+
+(ert-deftest synaxis-db-test-list-scrape-rules ()
+  (synaxis-db-tests--with-tmp
+   (synaxis-db-add-feed "https://example.com/a" '(:type "scrape"))
+   (synaxis-db-add-feed "https://example.com/b" '(:type "scrape"))
+   (synaxis-db-add-scrape-rule "https://example.com/a" '(:url-selector "x"))
+   (synaxis-db-add-scrape-rule "https://example.com/b" '(:url-selector "y"))
+   (let ((rs (synaxis-db-list-scrape-rules)))
+     (should (= 2 (length rs)))
+     (should (assoc "https://example.com/a" rs)))))
 
 ;;; Tag registry CRUD
 
