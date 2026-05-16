@@ -290,5 +290,62 @@
      (should scrape-fired)
      (should-not queue-fired))))
 
+;;; Conditional GET headers
+
+(ert-deftest synaxis-fetch-test-conditional-headers-nil-feed ()
+  (should (null (synaxis-fetch--conditional-headers nil))))
+
+(ert-deftest synaxis-fetch-test-conditional-headers-empty-feed ()
+  (should (null (synaxis-fetch--conditional-headers '()))))
+
+(ert-deftest synaxis-fetch-test-conditional-headers-etag-only ()
+  (should (equal '(("If-None-Match" . "abc"))
+                 (synaxis-fetch--conditional-headers '(:etag "abc")))))
+
+(ert-deftest synaxis-fetch-test-conditional-headers-last-modified-only ()
+  (should (equal '(("If-Modified-Since" . "Wed, 21 Oct 2026 07:28:00 GMT"))
+                 (synaxis-fetch--conditional-headers
+                  '(:last-modified "Wed, 21 Oct 2026 07:28:00 GMT")))))
+
+(ert-deftest synaxis-fetch-test-conditional-headers-both ()
+  (let ((h (synaxis-fetch--conditional-headers
+            '(:etag "abc" :last-modified "Wed, 21 Oct 2026 07:28:00 GMT"))))
+    (should (member '("If-None-Match" . "abc") h))
+    (should (member '("If-Modified-Since" . "Wed, 21 Oct 2026 07:28:00 GMT") h))))
+
+;;; Cache-extract advice toggle
+
+(ert-deftest synaxis-fetch-test-cache-advice-toggle-idempotent ()
+  "Toggling on twice does not double-install advice."
+  (unwind-protect
+      (progn
+        (synaxis-fetch--cache-advice-toggle t)
+        (synaxis-fetch--cache-advice-toggle t)
+        (should synaxis-fetch--cache-advice-active)
+        (synaxis-fetch--cache-advice-toggle nil)
+        (synaxis-fetch--cache-advice-toggle nil)
+        (should-not synaxis-fetch--cache-advice-active))
+    (synaxis-fetch--cache-advice-toggle nil)))
+
+(ert-deftest synaxis-fetch-test-cache-advice-safe-on-missing-file ()
+  "The :around advice returns nil for a missing file without erroring."
+  (let ((called-orig nil))
+    (should-not
+     (synaxis-fetch--url-cache-extract-safe
+      (lambda (_) (setq called-orig t))
+      "/tmp/synaxis-cache-definitely-not-a-file.bin"))
+    (should-not called-orig)))
+
+(ert-deftest synaxis-fetch-test-cache-advice-passes-through-when-present ()
+  "Advice delegates to ORIG when the file exists."
+  (let ((tmp (make-temp-file "synaxis-cache-pass-")))
+    (unwind-protect
+        (let ((called-with nil))
+          (synaxis-fetch--url-cache-extract-safe
+           (lambda (f) (setq called-with f))
+           tmp)
+          (should (equal tmp called-with)))
+      (delete-file tmp))))
+
 (provide 'synaxis-fetch-tests)
 ;;; synaxis-fetch-tests.el ends here
