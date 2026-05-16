@@ -93,12 +93,11 @@ machines that do not have the entry cached locally."
   "Export a synaxis: link to BACKEND.
 PATH is the article URL; DESC the user-visible label (falls back
 to PATH)."
-  (let ((url  (or path ""))
-        (desc (or desc path)))
+  (let ((desc (or desc path)))
     (pcase backend
-      ('html  (format "<a href=\"%s\">%s</a>" url desc))
-      ('md    (format "[%s](%s)" desc url))
-      ('latex (format "\\href{%s}{%s}" url desc))
+      ('html  (format "<a href=\"%s\">%s</a>" path desc))
+      ('md    (format "[%s](%s)" desc path))
+      ('latex (format "\\href{%s}{%s}" path desc))
       ('ascii desc)
       (_      desc))))
 
