@@ -173,5 +173,82 @@
   (should (equal "Title" (synaxis-scrape--strip-title "Title" nil)))
   (should (equal "" (synaxis-scrape--strip-title nil " - foo"))))
 
+;;; Pure extraction
+
+(defun synaxis-scrape-tests--load (name)
+  (with-temp-buffer
+    (insert-file-contents
+     (expand-file-name name synaxis-scrape-tests--fixtures-dir))
+    (buffer-string)))
+
+(ert-deftest synaxis-scrape-test-extract-basic ()
+  "Extracts 3 entries from the basic blog fixture."
+  (let* ((html (synaxis-scrape-tests--load "scrape-basic.html"))
+         (entries (synaxis-scrape--extract
+                   html "https://example.com/blog/"
+                   '(:url-selector "h2.entry-title a"))))
+    (should (= 3 (length entries)))
+    (let ((links (mapcar (lambda (e) (plist-get e :link)) entries)))
+      (should (member "https://example.com/post/1" links))
+      (should (member "https://example.com/post/3" links)))
+    (should (string-match-p "First Post"
+                            (plist-get (car entries) :title)))))
+
+(ert-deftest synaxis-scrape-test-extract-applies-url-pattern ()
+  (let* ((html (synaxis-scrape-tests--load "scrape-basic.html"))
+         (entries (synaxis-scrape--extract
+                   html "https://example.com/blog/"
+                   '(:url-selector "h2.entry-title a"
+                                   :url-pattern "/post/2"))))
+    (should (= 1 (length entries)))
+    (should (string-match-p "/post/2" (plist-get (car entries) :link)))))
+
+(ert-deftest synaxis-scrape-test-extract-applies-limit ()
+  (let* ((html (synaxis-scrape-tests--load "scrape-basic.html"))
+         (entries (synaxis-scrape--extract
+                   html "https://example.com/blog/"
+                   '(:url-selector "h2.entry-title a" :limit 2))))
+    (should (= 2 (length entries)))))
+
+(ert-deftest synaxis-scrape-test-extract-applies-title-cleanup ()
+  (let* ((html (synaxis-scrape-tests--load "scrape-basic.html"))
+         (entries (synaxis-scrape--extract
+                   html "https://example.com/blog/"
+                   '(:url-selector "h2.entry-title a"
+                                   :title-cleanup " Post"))))
+    (should (equal "First" (plist-get (car entries) :title)))))
+
+(ert-deftest synaxis-scrape-test-extract-resolves-relative-links ()
+  (let* ((html (synaxis-scrape-tests--load "scrape-basic.html"))
+         (entries (synaxis-scrape--extract
+                   html "https://example.com/blog/"
+                   '(:url-selector "h2.entry-title a"))))
+    (dolist (e entries)
+      (should (string-prefix-p "https://example.com/" (plist-get e :link))))))
+
+(ert-deftest synaxis-scrape-test-extract-deduplicates ()
+  "Same href appearing twice in the source HTML is deduped."
+  (let ((html "<html><body>
+                  <a class=\"x\" href=\"/p/1\">A</a>
+                  <a class=\"x\" href=\"/p/1\">A again</a>
+                  <a class=\"x\" href=\"/p/2\">B</a>
+                </body></html>"))
+    (should (= 2 (length
+                  (synaxis-scrape--extract
+                   html "https://example.com/"
+                   '(:url-selector ".x")))))))
+
+(ert-deftest synaxis-scrape-test-extract-empty-on-no-match ()
+  (let* ((html (synaxis-scrape-tests--load "scrape-basic.html")))
+    (should (null (synaxis-scrape--extract
+                   html "https://example.com/"
+                   '(:url-selector ".nothing-matches"))))))
+
+(ert-deftest synaxis-scrape-test-page-title-with-cleanup ()
+  (let ((html "<html><head><title>Hello - Site</title></head></html>"))
+    (should (equal "Hello"
+                   (synaxis-scrape--page-title
+                    html '(:title-cleanup " - Site"))))))
+
 (provide 'synaxis-scrape-tests)
 ;;; synaxis-scrape-tests.el ends here
