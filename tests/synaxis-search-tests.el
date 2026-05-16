@@ -355,5 +355,30 @@ after, it uses the registry override."
          (call-interactively 'synaxis-search-edit-feed))
        (should (equal "https://example.com/ef" captured))))))
 
+(ert-deftest synaxis-search-test-browse-entry-from-search-mode ()
+  "`synaxis-search-browse-entry' opens the row's link via `browse-url'."
+  (synaxis-search-tests--with-tmp
+   (synaxis-search-tests--add-entry
+    "https://example.com/b" "1" "T" 1.0 t)
+   (synaxis-db-upsert-entry
+    '(:feed-url "https://example.com/b" :source-id "1"
+                :title "T" :link "https://example.com/article" :date 1.0))
+   (let ((synaxis-search-default-filter ""))
+     (synaxis-search))
+   (with-current-buffer "*synaxis*"
+     (goto-char (point-min))
+     (let (browsed)
+       (cl-letf (((symbol-function 'browse-url)
+                  (lambda (u &rest _) (setq browsed u))))
+         (synaxis-search-browse-entry))
+       (should (equal "https://example.com/article" browsed))))))
+
+(ert-deftest synaxis-search-test-browse-entry-errors-without-row ()
+  "Browse errors with `user-error' when no entry is at point."
+  (synaxis-search-tests--with-tmp
+   (with-temp-buffer
+     (synaxis-search-mode)
+     (should-error (synaxis-search-browse-entry) :type 'user-error))))
+
 (provide 'synaxis-search-tests)
 ;;; synaxis-search-tests.el ends here

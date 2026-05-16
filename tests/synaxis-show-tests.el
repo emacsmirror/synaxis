@@ -156,5 +156,40 @@
         (synaxis-show--walk +1)
         (should (equal (nth 1 ids) synaxis-show--entry-id))))))
 
+(ert-deftest synaxis-show-test-render-stores-current-link ()
+  "Rendering an entry seeds `synaxis-show--current-link' from `:link'."
+  (synaxis-show-tests--with-tmp
+    (synaxis-db-add-feed "https://example.com/b" '(:title "Brows"))
+    (let ((id (synaxis-db-upsert-entry
+               '(:feed-url "https://example.com/b" :source-id "1"
+                           :title "T" :link "https://example.com/post"
+                           :date 1.0))))
+      (synaxis-show-entry id)
+      (with-current-buffer "*synaxis-show*"
+        (should (equal "https://example.com/post"
+                       synaxis-show--current-link))))))
+
+(ert-deftest synaxis-show-test-browse-entry-calls-browse-url ()
+  "`synaxis-show-browse-entry' passes the stored link to `browse-url'."
+  (synaxis-show-tests--with-tmp
+    (synaxis-db-add-feed "https://example.com/b" '(:title "Brows"))
+    (let ((id (synaxis-db-upsert-entry
+               '(:feed-url "https://example.com/b" :source-id "1"
+                           :title "T" :link "https://example.com/post"
+                           :date 1.0)))
+          (browsed nil))
+      (synaxis-show-entry id)
+      (with-current-buffer "*synaxis-show*"
+        (cl-letf (((symbol-function 'browse-url)
+                   (lambda (u &rest _) (setq browsed u))))
+          (synaxis-show-browse-entry))
+        (should (equal "https://example.com/post" browsed))))))
+
+(ert-deftest synaxis-show-test-browse-entry-errors-when-no-link ()
+  "Browse errors with `user-error' when no link is recorded."
+  (with-temp-buffer
+    (synaxis-show-mode)
+    (should-error (synaxis-show-browse-entry) :type 'user-error)))
+
 (provide 'synaxis-show-tests)
 ;;; synaxis-show-tests.el ends here
