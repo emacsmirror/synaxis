@@ -250,5 +250,67 @@
                    (synaxis-scrape--page-title
                     html '(:title-cleanup " - Site"))))))
 
+;;; Async per-article expansion
+
+(defun synaxis-scrape-tests--response-buffer (body)
+  "Return a buffer containing a synthetic HTTP response with BODY."
+  (let ((buf (generate-new-buffer " *synaxis-scrape-test*")))
+    (with-current-buffer buf
+      (insert "HTTP/1.1 200 OK\r\n\r\n" body))
+    buf))
+
+(ert-deftest synaxis-scrape-test-expand-content-skipped-without-selector ()
+  (let (out)
+    (synaxis-scrape--expand-content
+     (list (list :link "x"))
+     '(:url-selector "a")
+     (lambda (entries) (setq out entries)))
+    (should out)
+    (should (equal "x" (plist-get (car out) :link)))))
+
+(ert-deftest synaxis-scrape-test-expand-content-applies-selector ()
+  (let* ((article-html (with-temp-buffer
+                         (insert-file-contents
+                          (expand-file-name "scrape-article.html"
+                                            synaxis-scrape-tests--fixtures-dir))
+                         (buffer-string)))
+         (entries (list (list :link "https://example.com/p/1"
+                              :title "T" :date 1.0)))
+         out)
+    (cl-letf (((symbol-function 'url-queue-retrieve)
+               (lambda (_url cb cbargs &rest _)
+                 (with-current-buffer
+                     (synaxis-scrape-tests--response-buffer article-html)
+                   (apply cb nil cbargs)))))
+      (synaxis-scrape--expand-content
+       entries
+       '(:url-selector "a"
+                       :content-selector "div.content"
+                       :content-cleanup ".ads, .related-posts")
+       (lambda (e) (setq out e))))
+    (should (= 1 (length out)))
+    (let ((c (plist-get (car out) :content)))
+      (should (string-match-p "Real article body" c))
+      (should-not (string-match-p "Advertisement" c)))))
+
+(ert-deftest synaxis-scrape-test-expand-content-fan-in ()
+  "All N callbacks must fire before done-callback runs."
+  (let* ((entries (cl-loop for i below 4
+                           collect (list :link (format "https://x.example/%d" i)
+                                         :title "T" :date 1.0)))
+         out fired)
+    (cl-letf (((symbol-function 'url-queue-retrieve)
+               (lambda (_url cb cbargs &rest _)
+                 (with-current-buffer
+                     (synaxis-scrape-tests--response-buffer
+                      "<html><body><article><p>x</p></article></body></html>")
+                   (apply cb nil cbargs)))))
+      (synaxis-scrape--expand-content
+       entries
+       '(:url-selector "a" :content-selector "article")
+       (lambda (e) (setq fired t out e))))
+    (should fired)
+    (should (= 4 (length out)))))
+
 (provide 'synaxis-scrape-tests)
 ;;; synaxis-scrape-tests.el ends here
