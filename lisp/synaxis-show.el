@@ -131,6 +131,22 @@ in the show buffer can navigate between sibling entries."
       (synaxis-db-remove-tag entry-id "unread")
       (pop-to-buffer buf))))
 
+(defun synaxis-show-entry-plist (entry)
+  "Display ENTRY plist in `*synaxis-show*' without DB lookup or side effects.
+Used by scrape-test and other preview paths that have an entry
+plist in hand but no DB row to refer to."
+  (let ((buf (get-buffer-create "*synaxis-show*")))
+    (with-current-buffer buf
+      (unless (derived-mode-p 'synaxis-show-mode)
+        (synaxis-show-mode))
+      (let ((inhibit-read-only t))
+        (erase-buffer)
+        (funcall synaxis-show-display-function entry)
+        (goto-char (point-min)))
+      (setq synaxis-show--entry-id nil)
+      (setq synaxis-show--peers nil))
+    (pop-to-buffer buf)))
+
 (defun synaxis-show--walk (delta)
   "Show the peer entry at DELTA from the current one.
 DELTA is +1 (next) or -1 (previous).  Errors at the ends or when
