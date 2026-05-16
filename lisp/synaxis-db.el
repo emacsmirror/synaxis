@@ -122,6 +122,10 @@ marks `unread' as a system tag."
     SELECT DISTINCT tag,
            CASE WHEN tag = 'unread' THEN 1 ELSE 0 END
     FROM entry_tags;")
+  ;; Always seed `unread' as a system tag (fresh installs have nothing
+  ;; in entry_tags to migrate).
+  (sqlite-execute db "INSERT OR IGNORE INTO tags (tag, system) VALUES ('unread', 1);")
+  (sqlite-execute db "UPDATE tags SET system = 1 WHERE tag = 'unread';")
   (sqlite-execute
    db
    "CREATE TABLE entry_tags_new (
@@ -487,6 +491,63 @@ No-op when ENTRY-IDS is nil."
                       AND entry_id IN (" placeholders ");")
              params)
             (setq offset end)))))))
+
+(defun synaxis-db-list-tags ()
+  "Return the tag registry as a list of plists.
+Each plist has `:tag :description :face :system :meta'."
+  (let ((db (synaxis-db--ensure-open)))
+    (mapcar
+     (lambda (row)
+       (pcase-let ((`(,tag ,desc ,face ,sys ,meta) row))
+         (list :tag tag
+               :description desc
+               :face face
+               :system (eq sys 1)
+               :meta (synaxis-db--decode-meta meta))))
+     (sqlite-select
+      db
+      "SELECT tag, description, face, system, meta FROM tags
+       ORDER BY tag COLLATE NOCASE;"))))
+
+(defun synaxis-db-rename-tag (old new)
+  "Rename tag OLD to NEW, merging if NEW already exists.
+When NEW exists, entry_tags rows tagged OLD that would collide are
+dropped, the remaining are reattached to NEW, and OLD is removed.
+When NEW is new, FK ON UPDATE CASCADE propagates the rename."
+  (when (or (null old) (string-empty-p old)
+            (null new) (string-empty-p new)
+            (string= old new))
+    (user-error "Invalid rename: %S -> %S" old new))
+  (let ((db (synaxis-db--ensure-open)))
+    (synaxis-db--with-transaction db
+      (if (sqlite-select db "SELECT 1 FROM tags WHERE tag = ?;" (list new))
+          (progn
+            (sqlite-execute
+             db
+             "INSERT OR IGNORE INTO entry_tags (entry_id, tag)
+              SELECT entry_id, ? FROM entry_tags WHERE tag = ?;"
+             (list new old))
+            (sqlite-execute db "DELETE FROM tags WHERE tag = ?;"
+                            (list old)))
+        (sqlite-execute db "UPDATE tags SET tag = ? WHERE tag = ?;"
+                        (list new old))))))
+
+(defun synaxis-db-delete-tag (tag)
+  "Delete TAG from the registry.  Cascades to `entry_tags' via FK."
+  (let ((db (synaxis-db--ensure-open)))
+    (sqlite-execute db "DELETE FROM tags WHERE tag = ?;" (list tag))))
+
+(defun synaxis-db-set-tag-face (tag face)
+  "Set the rendering FACE for TAG.  FACE may be a symbol, string, or nil."
+  (let ((db (synaxis-db--ensure-open)))
+    (sqlite-execute db "UPDATE tags SET face = ? WHERE tag = ?;"
+                    (list (and face (format "%s" face)) tag))))
+
+(defun synaxis-db-set-tag-description (tag description)
+  "Set the human DESCRIPTION for TAG.  Nil clears it."
+  (let ((db (synaxis-db--ensure-open)))
+    (sqlite-execute db "UPDATE tags SET description = ? WHERE tag = ?;"
+                    (list description tag))))
 
 (defun synaxis-db-get-tags (entry-id)
   "Return the list of tag strings on ENTRY-ID."
