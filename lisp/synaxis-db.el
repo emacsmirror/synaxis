@@ -23,6 +23,7 @@
 
 (require 'cl-lib)
 (require 'sqlite)
+(require 'subr-x)
 
 (defvar synaxis-testing nil
   "Non-nil while a test run is in progress.
@@ -319,11 +320,11 @@ them with nil."
   "Replace `feeds.meta.autotags' on URL with TAGS list.
 Preserves other keys inside `meta'."
   (let* ((feed (synaxis-db-get-feed url))
-         (meta (or (plist-get feed :meta) '())))
-    (setq meta (plist-put meta :autotags (if tags (vconcat tags) [])))
-    (let ((db (synaxis-db--ensure-open)))
-      (sqlite-execute db "UPDATE feeds SET meta = ? WHERE url = ?;"
-                      (list (synaxis-db--encode-meta meta) url)))))
+         (meta (plist-put (or (plist-get feed :meta) '())
+                          :autotags (if tags (vconcat tags) []))))
+    (sqlite-execute (synaxis-db--ensure-open)
+                    "UPDATE feeds SET meta = ? WHERE url = ?;"
+                    (list (synaxis-db--encode-meta meta) url))))
 
 (defun synaxis-db-update-scrape-rule-field (url key value)
   "Set KEY to VALUE in the scrape rule for URL; preserves other keys."
@@ -528,7 +529,8 @@ Auto-registers TAG in `tags'."
         (while (< offset total)
           (let* ((end (min total (+ offset chunk-size)))
                  (chunk (cl-subseq entry-ids offset end))
-                 (placeholders (mapconcat (lambda (_) "(?, ?)") chunk ", "))
+                 (placeholders (string-join
+                                (make-list (length chunk) "(?, ?)") ", "))
                  (params (cl-loop for id in chunk append (list id tag))))
             (sqlite-execute
              db
@@ -552,7 +554,8 @@ No-op when ENTRY-IDS is nil."
         (while (< offset total)
           (let* ((end (min total (+ offset chunk-size)))
                  (chunk (cl-subseq entry-ids offset end))
-                 (placeholders (mapconcat (lambda (_) "?") chunk ", "))
+                 (placeholders (string-join
+                                (make-list (length chunk) "?") ", "))
                  (params (cons tag chunk)))
             (sqlite-execute
              db
@@ -675,14 +678,13 @@ Recognised keys: `:url-selector', `:url-pattern',
                      FROM scrape_rules WHERE feed_url = ?;"
                     (list url)))))
     (when row
-      (let* ((base (synaxis-db--scrape-rule-row row))
+      (let* ((base  (synaxis-db--scrape-rule-row row))
              (extra (plist-get base :meta)))
         ;; Spread the extras-meta plist back onto the top level.
-        (setq base (plist-put base :content-cleanup
-                              (plist-get extra :content-cleanup)))
-        (setq base (plist-put base :limit (plist-get extra :limit)))
-        (setq base (plist-put base :meta (plist-get extra :extra)))
-        base))))
+        (thread-first base
+                      (plist-put :content-cleanup (plist-get extra :content-cleanup))
+                      (plist-put :limit           (plist-get extra :limit))
+                      (plist-put :meta            (plist-get extra :extra)))))))
 
 (defun synaxis-db-list-scrape-rules ()
   "Return an alist of (URL . PLIST) for every scrape rule."
