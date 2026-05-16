@@ -60,7 +60,7 @@ entries, auto-save) honours this flag.  Defined here because
 (defvar synaxis-db--connection nil
   "Cached SQLite connection, or nil if not yet opened.")
 
-(defconst synaxis-db--schema-target-version 1
+(defconst synaxis-db--schema-target-version 2
   "Schema version the bootstrapper migrates databases up to.
 Bump this and append a new entry to `synaxis-db--migrations' when
 adding a schema change.")
@@ -103,8 +103,45 @@ adding a schema change.")
   (dolist (stmt synaxis-db--v1-statements)
     (sqlite-execute db stmt)))
 
+(defun synaxis-db--migration-1-to-2 (db)
+  "Add the `tags' registry and rewrite `entry_tags' with an FK to it.
+Populates `tags' from existing distinct values in `entry_tags' and
+marks `unread' as a system tag."
+  (sqlite-execute
+   db
+   "CREATE TABLE tags (
+      tag         TEXT    PRIMARY KEY,
+      description TEXT,
+      face        TEXT,
+      system      INTEGER NOT NULL DEFAULT 0,
+      meta        TEXT
+    ) STRICT;")
+  (sqlite-execute
+   db
+   "INSERT INTO tags (tag, system)
+    SELECT DISTINCT tag,
+           CASE WHEN tag = 'unread' THEN 1 ELSE 0 END
+    FROM entry_tags;")
+  (sqlite-execute
+   db
+   "CREATE TABLE entry_tags_new (
+      entry_id INTEGER NOT NULL REFERENCES entries(id) ON DELETE CASCADE,
+      tag      TEXT    NOT NULL REFERENCES tags(tag)
+                                ON DELETE CASCADE
+                                ON UPDATE CASCADE,
+      PRIMARY KEY (entry_id, tag)
+    ) STRICT;")
+  (sqlite-execute
+   db
+   "INSERT INTO entry_tags_new (entry_id, tag)
+    SELECT entry_id, tag FROM entry_tags;")
+  (sqlite-execute db "DROP TABLE entry_tags;")
+  (sqlite-execute db "ALTER TABLE entry_tags_new RENAME TO entry_tags;")
+  (sqlite-execute db "CREATE INDEX entry_tags_tag ON entry_tags (tag);"))
+
 (defvar synaxis-db--migrations
-  '((1 . synaxis-db--migration-0-to-1))
+  '((1 . synaxis-db--migration-0-to-1)
+    (2 . synaxis-db--migration-1-to-2))
   "Alist of (TARGET-VERSION . FUNCTION).
 FUNCTION takes the open DB and moves the schema from TARGET-VERSION-1
 to TARGET-VERSION.  Each call is wrapped in its own transaction by
@@ -363,12 +400,16 @@ caps the result count.  Results are ordered by date descending."
 ;;; Tags
 
 (defun synaxis-db-add-tag (entry-id tag)
-  "Add TAG to ENTRY-ID.  Idempotent."
+  "Add TAG to ENTRY-ID.  Idempotent.  Auto-registers TAG in `tags'."
   (let ((db (synaxis-db--ensure-open)))
-    (sqlite-execute
-     db
-     "INSERT OR IGNORE INTO entry_tags (entry_id, tag) VALUES (?, ?);"
-     (list entry-id tag))))
+    (synaxis-db--with-transaction db
+      (sqlite-execute db
+                      "INSERT OR IGNORE INTO tags (tag) VALUES (?);"
+                      (list tag))
+      (sqlite-execute
+       db
+       "INSERT OR IGNORE INTO entry_tags (entry_id, tag) VALUES (?, ?);"
+       (list entry-id tag)))))
 
 (defun synaxis-db-remove-tag (entry-id tag)
   "Remove TAG from ENTRY-ID."
@@ -380,10 +421,14 @@ caps the result count.  Results are ordered by date descending."
 
 (defun synaxis-db-bulk-add-tag (entry-ids tag)
   "Add TAG to each id in ENTRY-IDS in a single transaction.
-No-op when ENTRY-IDS is nil.  Idempotent via INSERT OR IGNORE."
+No-op when ENTRY-IDS is nil.  Idempotent via INSERT OR IGNORE.
+Auto-registers TAG in `tags'."
   (when entry-ids
     (let ((db (synaxis-db--ensure-open)))
       (synaxis-db--with-transaction db
+        (sqlite-execute db
+                        "INSERT OR IGNORE INTO tags (tag) VALUES (?);"
+                        (list tag))
         (dolist (id entry-ids)
           (sqlite-execute
            db
