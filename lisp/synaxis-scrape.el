@@ -375,18 +375,25 @@ Pure: no HTTP, no DB.  Returns a list of entry plists."
 ;;; Async per-article expansion
 
 (defun synaxis-scrape--apply-content (buffer rules)
-  "Return the content STRING extracted from BUFFER per RULES.
-Reads `:content-selector' and `:content-cleanup' from RULES."
+  "Extract content and date from BUFFER (an HTTP response) per RULES.
+Returns a plist `(:content STR-OR-NIL :date FLOAT-OR-NIL)' so the
+caller can update both fields on the entry.  `:date-selector' is
+applied against the article DOM (where per-article dates live),
+not the index DOM."
   (let* ((html (synaxis-scrape--decode-html buffer))
          (dom  (with-temp-buffer
                  (insert html)
                  (libxml-parse-html-region (point-min) (point-max))))
-         (selector (plist-get rules :content-selector))
-         (node     (and selector (car (synaxis-scrape--query selector dom)))))
-    (when node
-      (synaxis-scrape--cleanup-content
-       node (plist-get rules :content-cleanup))
-      (synaxis-scrape--node-html node))))
+         (content-selector (plist-get rules :content-selector))
+         (node (and content-selector
+                    (car (synaxis-scrape--query content-selector dom))))
+         (content (when node
+                    (synaxis-scrape--cleanup-content
+                     node (plist-get rules :content-cleanup))
+                    (synaxis-scrape--node-html node)))
+         (date (synaxis-scrape--extract-date
+                dom (plist-get rules :date-selector))))
+    (list :content content :date date)))
 
 (defun synaxis-scrape--queue-article (entry rules tracker done-callback)
   "Fetch ENTRY's :link asynchronously, apply RULES, update TRACKER.
@@ -397,11 +404,13 @@ Calls DONE-CALLBACK with the entry list once all pending fetches return."
      (plist-get entry :link)
      (lambda (_status entry rules tracker done-callback)
        (unwind-protect
-           (let ((content (ignore-errors
-                            (synaxis-scrape--apply-content
-                             (current-buffer) rules))))
-             (when content
-               (plist-put entry :content content)))
+           (let ((result (ignore-errors
+                           (synaxis-scrape--apply-content
+                            (current-buffer) rules))))
+             (when (plist-get result :content)
+               (plist-put entry :content (plist-get result :content)))
+             (when (plist-get result :date)
+               (plist-put entry :date (plist-get result :date))))
          (kill-buffer (current-buffer))
          (synaxis-scrape--tracker-tick tracker entry done-callback)))
      (list entry rules tracker done-callback)
@@ -577,8 +586,8 @@ per-article content (capped at 5 items for test mode), and pops
     (synaxis-scrape--render-test-buffer url expanded)))
 
 (defun synaxis-scrape--expand-sync-test (entries rules)
-  "Synchronously expand per-article content for test mode.
-Returns ENTRIES with `:content' filled when `:content-selector' is set.
+  "Synchronously expand per-article content and date for test mode.
+Returns ENTRIES with `:content' and `:date' filled per RULES.
 Inhibits Emacs's auth prompt on 401 responses."
   (if (not (plist-get rules :content-selector))
       entries
@@ -590,9 +599,13 @@ Inhibits Emacs's auth prompt on 401 responses."
              (let* ((url-request-extra-headers synaxis-http-request-headers)
                     (buf (url-retrieve-synchronously
                           (plist-get e :link) t t))
-                    (content (synaxis-scrape--apply-content buf rules)))
+                    (result (synaxis-scrape--apply-content buf rules)))
                (when (buffer-live-p buf) (kill-buffer buf))
-               (if content (plist-put e :content content) e))
+               (when (plist-get result :content)
+                 (setq e (plist-put e :content (plist-get result :content))))
+               (when (plist-get result :date)
+                 (setq e (plist-put e :date (plist-get result :date))))
+               e)
            (error e)))
        entries))))
 
