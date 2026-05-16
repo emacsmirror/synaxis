@@ -75,6 +75,33 @@
     (should (not (string-empty-p (plist-get e1 :source-id))))
     (should (equal (plist-get e1 :source-id) (plist-get e2 :source-id)))))
 
+(ert-deftest synaxis-parse-test-atom-xml-base-resolves-entry-link ()
+  "Feed-level xml:base resolves an entry's relative href."
+  (let* ((feed (synaxis-parse-string
+                (synaxis-tests--load-fixture "atom-1.0-xml-base.xml")
+                "https://wherever.example.org/atom.xml"))
+         (e (car (plist-get feed :entries))))
+    (should (equal "https://feed.example.com/posts/entry-1"
+                   (plist-get e :link)))))
+
+(ert-deftest synaxis-parse-test-atom-entry-xml-base-overrides-feed ()
+  "Entry-level xml:base shadows the feed-level one."
+  (let* ((feed (synaxis-parse-string
+                (synaxis-tests--load-fixture "atom-1.0-xml-base.xml")
+                "https://wherever.example.org/atom.xml"))
+         (e (nth 1 (plist-get feed :entries))))
+    (should (equal "https://override.example.com/entry-2"
+                   (plist-get e :link)))))
+
+(ert-deftest synaxis-parse-test-atom-protocol-relative-link-resolved ()
+  "An Atom href like `//cdn.example/x' inherits the feed's scheme."
+  (let* ((feed (synaxis-parse-string
+                (synaxis-tests--load-fixture "atom-1.0-protocol-relative-link.xml")
+                "https://feeds.example.org/atom.xml"))
+         (e (car (plist-get feed :entries))))
+    (should (equal "https://cdn.example.com/post/1"
+                   (plist-get e :link)))))
+
 ;;; RSS
 
 (ert-deftest synaxis-parse-test-rss-2.0-minimal ()
@@ -95,6 +122,21 @@
          (e (car (plist-get feed :entries))))
     (should (string-match-p "Full HTML content" (or (plist-get e :content) "")))
     (should-not (string-match-p "short summary" (or (plist-get e :content) "")))))
+
+(ert-deftest synaxis-parse-test-rss-protocol-relative-link-resolved ()
+  "RSS `<link>//cdn.../1</link>' inherits the feed URL's scheme."
+  (let* ((feed (synaxis-parse-string
+                (synaxis-tests--load-fixture "rss-2.0-protocol-relative-link.xml")
+                "https://feeds.example.org/rss.xml"))
+         (e (car (plist-get feed :entries))))
+    (should (equal "https://cdn.example.com/r/1" (plist-get e :link)))))
+
+(ert-deftest synaxis-parse-test-rss-cdata-wrapped-link ()
+  "CDATA around a `<link>' value is unwrapped to the bare URL."
+  (let* ((feed (synaxis-parse-string
+                (synaxis-tests--load-fixture "rss-2.0-cdata-link.xml")))
+         (e (car (plist-get feed :entries))))
+    (should (equal "http://nullprogram.com/" (plist-get e :link)))))
 
 ;;; RSS 1.0 (RDF)
 

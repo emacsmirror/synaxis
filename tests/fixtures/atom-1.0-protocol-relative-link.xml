@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <title>Atom Protocol-Relative</title>
+  <id>tag:example.com,2024:proto-feed</id>
+  <updated>2024-04-05T06:07:08Z</updated>
+  <entry>
+    <title>Protocol-relative href</title>
+    <id>tag:example.com,2024:p1</id>
+    <link rel="alternate" href="//cdn.example.com/post/1"/>
+    <updated>2024-04-05T06:07:08Z</updated>
+    <content type="html">&lt;p&gt;cdn&lt;/p&gt;</content>
+  </entry>
+</feed>

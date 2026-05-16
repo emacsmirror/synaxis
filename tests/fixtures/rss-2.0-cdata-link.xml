@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<rss version="2.0">
+  <channel>
+    <title>RSS CDATA Link</title>
+    <link>https://example.com/</link>
+    <description>d</description>
+    <item>
+      <title>CDATA-wrapped link</title>
+      <link><![CDATA[http://nullprogram.com/]]></link>
+      <guid isPermaLink="false">tag:example.com,2024:cd1</guid>
+      <pubDate>Tue, 02 Jan 2024 03:04:05 GMT</pubDate>
+      <description>desc</description>
+    </item>
+  </channel>
+</rss>

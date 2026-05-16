@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom"
+      xml:base="https://feed.example.com/posts/">
+  <title>Atom xml:base</title>
+  <id>tag:example.com,2024:base-feed</id>
+  <updated>2024-03-04T05:06:07Z</updated>
+  <entry>
+    <title>Inherits feed base</title>
+    <id>tag:example.com,2024:b1</id>
+    <link rel="alternate" href="entry-1"/>
+    <updated>2024-03-04T05:06:07Z</updated>
+    <content type="html">&lt;p&gt;a&lt;/p&gt;</content>
+  </entry>
+  <entry xml:base="https://override.example.com/">
+    <title>Overrides feed base</title>
+    <id>tag:example.com,2024:b2</id>
+    <link rel="alternate" href="entry-2"/>
+    <updated>2024-03-04T05:06:07Z</updated>
+    <content type="html">&lt;p&gt;b&lt;/p&gt;</content>
+  </entry>
+</feed>

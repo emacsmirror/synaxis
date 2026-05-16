@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<rss version="2.0">
+  <channel>
+    <title>RSS Protocol-Relative</title>
+    <link>https://example.com/</link>
+    <description>d</description>
+    <item>
+      <title>Protocol-relative link text</title>
+      <link>//cdn.example.com/r/1</link>
+      <guid isPermaLink="false">tag:example.com,2024:rp1</guid>
+      <pubDate>Tue, 02 Jan 2024 03:04:05 GMT</pubDate>
+      <description>desc</description>
+    </item>
+  </channel>
+</rss>
