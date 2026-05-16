@@ -416,6 +416,54 @@
      (should (= 2 (length rs)))
      (should (assoc "https://example.com/a" rs)))))
 
+;;; Partial-update helpers
+
+(ert-deftest synaxis-db-test-set-feed-title-force-overwrites ()
+  "set-feed-title overwrites the existing title unconditionally."
+  (synaxis-db-tests--with-tmp
+   (synaxis-db-add-feed "https://example.com/t" '(:title "Old"))
+   (synaxis-db-set-feed-title "https://example.com/t" "New")
+   (should (equal "New"
+                  (plist-get (synaxis-db-get-feed "https://example.com/t")
+                             :title)))))
+
+(ert-deftest synaxis-db-test-set-feed-autotags-replaces-list ()
+  "set-feed-autotags replaces autotags but keeps other meta keys."
+  (synaxis-db-tests--with-tmp
+   (synaxis-db-add-feed "https://example.com/a"
+                        '(:meta (:autotags ["old"] :author "Alice")))
+   (synaxis-db-set-feed-autotags "https://example.com/a" '("new" "fresh"))
+   (let* ((feed (synaxis-db-get-feed "https://example.com/a"))
+          (meta (plist-get feed :meta))
+          (tags (append (plist-get meta :autotags) nil)))
+     (should (equal '("new" "fresh") tags))
+     ;; Other meta preserved.
+     (should (equal "Alice" (plist-get meta :author))))))
+
+(ert-deftest synaxis-db-test-update-scrape-rule-field ()
+  "update-scrape-rule-field changes one key only."
+  (synaxis-db-tests--with-tmp
+   (synaxis-db-add-feed "https://example.com/sc" '(:type "scrape"))
+   (synaxis-db-add-scrape-rule
+    "https://example.com/sc"
+    '(:url-selector "h2 a" :content-selector "article"
+                    :title-cleanup " - Site"))
+   (synaxis-db-update-scrape-rule-field
+    "https://example.com/sc" :url-pattern "/post/")
+   (let ((r (synaxis-db-get-scrape-rule "https://example.com/sc")))
+     ;; Updated.
+     (should (equal "/post/" (plist-get r :url-pattern)))
+     ;; Preserved.
+     (should (equal "h2 a" (plist-get r :url-selector)))
+     (should (equal "article" (plist-get r :content-selector)))
+     (should (equal " - Site" (plist-get r :title-cleanup))))))
+
+(ert-deftest synaxis-db-test-update-scrape-rule-field-errors-when-missing ()
+  (synaxis-db-tests--with-tmp
+   (should-error (synaxis-db-update-scrape-rule-field
+                  "https://nope/" :url-selector "x")
+                 :type 'user-error)))
+
 ;;; Tag registry CRUD
 
 (ert-deftest synaxis-db-test-list-tags-returns-registry ()
