@@ -59,6 +59,12 @@ Order matches the displayed order at the time of opening.  Stale
 if the originating filter changes after opening; the user can
 press `g' on the list buffer and reopen to refresh.")
 
+(defvar-local synaxis-show--current-link nil
+  "Original article URL for the entry shown in this buffer.
+Set by `synaxis-show--render-into-buffer' from the entry's
+`:link' so `synaxis-show-browse-entry' works in both DB-backed
+and plist-preview render paths.")
+
 ;;; Rendering
 
 (defun synaxis-show--render-shr (entry)
@@ -112,6 +118,7 @@ press `g' on the list buffer and reopen to refresh.")
   "p" ("Previous entry" synaxis-show-prev-entry)
   :group "Entry"
   "g" ("Reload"         synaxis-show-revert)
+  "b" ("Browse URL"     synaxis-show-browse-entry)
   "q" ("Quit"           quit-window))
 
 ;;; Mode
@@ -141,7 +148,8 @@ paths with no DB row).  Returns the buffer."
         (funcall synaxis-show-display-function entry)
         (goto-char (point-min)))
       (setq synaxis-show--entry-id entry-id
-            synaxis-show--peers peers))
+            synaxis-show--peers peers
+            synaxis-show--current-link (plist-get entry :link)))
     buf))
 
 (defun synaxis-show-entry (entry-id &optional peers)
@@ -205,6 +213,13 @@ originating `*synaxis*' buffer and lands point on the new entry."
   "Show the previous entry in the originating list view."
   (interactive)
   (synaxis-show--walk -1))
+
+(defun synaxis-show-browse-entry ()
+  "Open the current entry's article URL in a browser."
+  (interactive)
+  (if synaxis-show--current-link
+      (browse-url synaxis-show--current-link)
+    (user-error "No link for this entry")))
 
 (provide 'synaxis-show)
 ;;; synaxis-show.el ends here
