@@ -316,6 +316,31 @@
        (should (plist-get (funcall by-id id1) :unread))
        (should-not (plist-get (funcall by-id id2) :unread))))))
 
+(ert-deftest synaxis-db-test-list-entries-includes-tags-list ()
+  "Each row's :tags reflects every tag attached to the entry."
+  (synaxis-db-tests--with-tmp
+   (synaxis-db-add-feed "https://example.com/tt")
+   (let ((id (synaxis-db-upsert-entry
+              '(:feed-url "https://example.com/tt" :source-id "1"
+                          :title "T" :date 1.0))))
+     (synaxis-db-add-tag id "unread")
+     (synaxis-db-add-tag id "starred")
+     (let* ((entry (car (synaxis-db-list-entries nil nil)))
+            (tags  (plist-get entry :tags)))
+       (should (member "unread" tags))
+       (should (member "starred" tags))))))
+
+(ert-deftest synaxis-db-test-list-entries-empty-tags-yields-nil ()
+  "An untagged entry has :tags nil and :unread nil."
+  (synaxis-db-tests--with-tmp
+   (synaxis-db-add-feed "https://example.com/empty")
+   (synaxis-db-upsert-entry '(:feed-url "https://example.com/empty"
+                                        :source-id "1"
+                                        :title "T" :date 1.0))
+   (let ((entry (car (synaxis-db-list-entries nil nil))))
+     (should-not (plist-get entry :tags))
+     (should-not (plist-get entry :unread)))))
+
 (ert-deftest synaxis-db-test-list-entries-includes-feed-title ()
   "Joined query exposes feed title under :feed-title."
   (synaxis-db-tests--with-tmp
