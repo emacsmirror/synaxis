@@ -26,6 +26,8 @@
 (require 'keymap-popup)
 (require 'synaxis-db)
 
+(declare-function synaxis-search-refresh "synaxis-search" ())
+
 ;;; Customisation
 
 (defcustom synaxis-show-display-function #'synaxis-show--render-shr
@@ -90,6 +92,21 @@ press `g' on the list buffer and reopen to refresh.")
 
 (keymap-popup-define synaxis-show-mode-map
   "Keymap for `synaxis-show-mode'."
+  :description
+  (lambda ()
+    (with-current-buffer (or (get-buffer "*synaxis-show*") (current-buffer))
+      (if-let* ((id synaxis-show--entry-id)
+                (entry (synaxis-db-get-entry id)))
+          (let* ((title (or (plist-get entry :title) "(untitled)"))
+                 (feed  (or (plist-get entry :feed-title) ""))
+                 (peers synaxis-show--peers)
+                 (pos   (and peers (cl-position id peers)))
+                 (idx   (and pos (format " [%d/%d]" (1+ pos) (length peers)))))
+            (format "%s%s: %s"
+                    (propertize feed 'face 'font-lock-type-face)
+                    (or idx "")
+                    (propertize title 'face 'font-lock-keyword-face)))
+        "synaxis-show (no entry)")))
   :group "Navigate"
   "n" ("Next entry"     synaxis-show-next-entry)
   "p" ("Previous entry" synaxis-show-prev-entry)
@@ -147,10 +164,29 @@ plist in hand but no DB row to refer to."
       (setq synaxis-show--peers nil))
     (pop-to-buffer buf)))
 
+(defun synaxis-show--sync-list (id)
+  "Refresh `*synaxis*' and move point to the row whose id is ID.
+No-op if the buffer is gone or not in `synaxis-search-mode'.  If ID
+is filtered out after refresh, point stays where the refresh landed."
+  (and-let* ((buf (get-buffer "*synaxis*"))
+             ((buffer-live-p buf)))
+    (with-current-buffer buf
+      (when (derived-mode-p 'synaxis-search-mode)
+        (require 'synaxis-search)
+        (synaxis-search-refresh)
+        (goto-char (point-min))
+        (while (and (not (eobp))
+                    (not (equal id (tabulated-list-get-id))))
+          (forward-line 1))
+        (when (eobp) (goto-char (point-min)))
+        (when-let* ((win (get-buffer-window buf 'visible)))
+          (set-window-point win (point)))))))
+
 (defun synaxis-show--walk (delta)
   "Show the peer entry at DELTA from the current one.
 DELTA is +1 (next) or -1 (previous).  Errors at the ends or when
-the buffer has no recorded peers."
+the buffer has no recorded peers.  After navigating, refreshes the
+originating `*synaxis*' buffer and lands point on the new entry."
   (unless synaxis-show--peers
     (user-error "Not in a navigable view"))
   (let* ((peers  synaxis-show--peers)
@@ -158,7 +194,9 @@ the buffer has no recorded peers."
          (target (and pos (+ pos delta))))
     (unless (and target (<= 0 target) (< target (length peers)))
       (user-error "No more entries"))
-    (synaxis-show-entry (nth target peers) peers)))
+    (let ((new-id (nth target peers)))
+      (synaxis-show-entry new-id peers)
+      (synaxis-show--sync-list new-id))))
 
 (defun synaxis-show-next-entry ()
   "Show the next entry in the originating list view."
