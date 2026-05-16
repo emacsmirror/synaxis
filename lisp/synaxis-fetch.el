@@ -44,12 +44,15 @@ Bound around the `url-queue-retrieve' call as
 (defcustom synaxis-http-request-headers
   '(("Accept-Language" . "en-US,en;q=0.9")
     ("Accept" . "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
-    ("User-Agent" . "Mozilla/5.0 (X11; Linux x86_64; rv:128.0) Gecko/20100101 Firefox/128.0"))
+    ("User-Agent" . "Mozilla/5.0 (X11; Linux x86_64; rv:128.0) Gecko/20100101 Firefox/128.0")
+    ("Cookie" . "ucbcb=1; gdpr=1; cookieconsent_status=allow"))
   "HTTP headers sent by feed fetch and scrape requests.
-Bound as `url-request-extra-headers' around each call.  The default
-User-Agent impersonates a recent Firefox so sites with bot filters
-do not 403; adjust `Accept-Language' to bias content to your
-locale (e.g. \"el-GR,en;q=0.5\")."
+Bound as `url-request-extra-headers' around each call.  Defaults
+impersonate a recent Firefox and pre-set common EU-cookie-consent
+bypass values (`ucbcb=1', `gdpr=1', `cookieconsent_status=allow')
+so consent gates are skipped on the major CMPs.  Adjust
+`Accept-Language' to bias content to your locale (e.g.
+\"el-GR,en;q=0.5\")."
   :type '(alist :key-type string :value-type string)
   :group 'synaxis)
 
