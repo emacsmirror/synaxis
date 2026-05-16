@@ -73,7 +73,7 @@ runs."
     (setq synaxis--update-timer nil)))
 
 (defun synaxis--update-background ()
-  "Fetch all feeds without messaging.  No-op when no feeds exist."
+  "Fetch all feeds.  No-op when no feeds are registered."
   (when (synaxis-db-list-feeds)
     (synaxis-fetch-all)))
 
@@ -115,39 +115,41 @@ Example:
                          (:remove (repeat (string :tag "Tag to remove"))))))
   :group 'synaxis)
 
+(defun synaxis-tag-rules--filter-sql (filter)
+  "Compile FILTER to (WHERE . PARAMS)."
+  (let ((c (synaxis-filter-compile (synaxis-filter-parse filter))))
+    (cons (plist-get c :where) (plist-get c :params))))
+
 (defun synaxis-tag-rules--matching-ids (filter)
   "Return ids of entries matching FILTER, or nil."
-  (let* ((c      (synaxis-filter-compile (synaxis-filter-parse filter)))
-         (where  (plist-get c :where))
-         (params (plist-get c :params))
-         (db     (synaxis-db--ensure-open))
-         (sql    (concat "SELECT e.id FROM entries e
-                          JOIN feeds f ON f.url = e.feed_url
-                          WHERE " where ";")))
-    (mapcar #'car (sqlite-select db sql params))))
+  (pcase-let ((`(,where . ,params) (synaxis-tag-rules--filter-sql filter)))
+    (mapcar #'car
+            (sqlite-select (synaxis-db--ensure-open)
+                           (concat "SELECT e.id FROM entries e
+                                    JOIN feeds f ON f.url = e.feed_url
+                                    WHERE " where ";")
+                           params))))
 
 (defun synaxis-tag-rules--rule-matches-entry-p (rule entry-id)
   "Non-nil if RULE's :filter matches ENTRY-ID."
-  (let* ((c      (synaxis-filter-compile
-                  (synaxis-filter-parse (plist-get rule :filter))))
-         (where  (plist-get c :where))
-         (params (plist-get c :params))
-         (db     (synaxis-db--ensure-open))
-         (sql    (concat "SELECT 1 FROM entries e
-                          JOIN feeds f ON f.url = e.feed_url
-                          WHERE (" where ") AND e.id = ?
-                          LIMIT 1;")))
-    (sqlite-select db sql (append params (list entry-id)))))
+  (pcase-let ((`(,where . ,params)
+               (synaxis-tag-rules--filter-sql (plist-get rule :filter))))
+    (sqlite-select (synaxis-db--ensure-open)
+                   (concat "SELECT 1 FROM entries e
+                            JOIN feeds f ON f.url = e.feed_url
+                            WHERE (" where ") AND e.id = ?
+                            LIMIT 1;")
+                   (append params (list entry-id)))))
 
 (defun synaxis-tag-rules-apply-entry (entry-id)
   "Apply each rule in `synaxis-tag-rules' to ENTRY-ID."
-  (dolist (rule synaxis-tag-rules)
-    (let ((add    (plist-get rule :add))
-          (remove (plist-get rule :remove)))
-      (when (and (or add remove)
-                 (synaxis-tag-rules--rule-matches-entry-p rule entry-id))
-        (dolist (tag add)    (synaxis-db-add-tag    entry-id tag))
-        (dolist (tag remove) (synaxis-db-remove-tag entry-id tag))))))
+  (cl-loop for rule in synaxis-tag-rules
+           for add    = (plist-get rule :add)
+           for remove = (plist-get rule :remove)
+           when (and (or add remove)
+                     (synaxis-tag-rules--rule-matches-entry-p rule entry-id))
+           do (cl-loop for tag in add    do (synaxis-db-add-tag    entry-id tag))
+           (cl-loop for tag in remove do (synaxis-db-remove-tag entry-id tag))))
 
 (defun synaxis-tag-rules-apply-all ()
   "Apply every rule in `synaxis-tag-rules' across all entries.
@@ -158,14 +160,14 @@ Re-adds any :add tag previously removed by hand on matching entries."
          (format "Apply %d rules across ALL entries? \
 This will re-add tags removed by hand on matching entries.  Continue? "
                  (length synaxis-tag-rules)))
-    (dolist (rule synaxis-tag-rules)
-      (let ((add    (plist-get rule :add))
-            (remove (plist-get rule :remove)))
-        (when (or add remove)
-          (let ((ids (synaxis-tag-rules--matching-ids
-                      (plist-get rule :filter))))
-            (dolist (tag add)    (synaxis-db-bulk-add-tag    ids tag))
-            (dolist (tag remove) (synaxis-db-bulk-remove-tag ids tag))))))
+    (cl-loop for rule in synaxis-tag-rules
+             for add    = (plist-get rule :add)
+             for remove = (plist-get rule :remove)
+             when (or add remove)
+             do (let ((ids (synaxis-tag-rules--matching-ids
+                            (plist-get rule :filter))))
+                  (cl-loop for tag in add    do (synaxis-db-bulk-add-tag    ids tag))
+                  (cl-loop for tag in remove do (synaxis-db-bulk-remove-tag ids tag))))
     (message "synaxis: applied %d rules" (length synaxis-tag-rules))))
 
 (defun synaxis-tag-rules-test (filter)
@@ -198,14 +200,6 @@ Read-only; no tags are changed."
 ;; Wire rules into the new-entry hook.  Safe when synaxis-tag-rules is nil
 ;; (apply-entry simply does nothing).
 (add-hook 'synaxis-new-entry-hook #'synaxis-tag-rules-apply-entry)
-
-;;; Completing-read wrapper
-
-(defun synaxis-completing-read (prompt collection &rest args)
-  "Wrapper around `completing-read' for synaxis prompts.
-PROMPT, COLLECTION, and ARGS are passed through.  Defined here so
-the user's completion framework is respected uniformly."
-  (apply #'completing-read prompt collection args))
 
 ;;; Scrape feed creation
 
@@ -272,7 +266,7 @@ Cascades to its entries and tags."
    (let ((urls (mapcar (lambda (f) (plist-get f :url))
                        (synaxis-db-list-feeds))))
      (unless urls (user-error "No feeds to remove"))
-     (list (synaxis-completing-read "Remove feed: " urls nil t))))
+     (list (completing-read "Remove feed: " urls nil t))))
   (when (y-or-n-p (format "Remove %s and all its entries? " url))
     (synaxis-db-remove-feed url)
     (message "synaxis: removed %s" url)
