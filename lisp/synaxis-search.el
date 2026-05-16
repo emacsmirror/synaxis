@@ -47,13 +47,16 @@ See `synaxis-filter-parse' for the syntax."
   :type 'integer
   :group 'synaxis)
 
-(defcustom synaxis-search-title-width 200
-  "Width budget for the title column.
-Long titles are clipped at the window edge via `truncate-lines',
-not truncated to this width.  A large value here means the column
-spec never forces an ellipsis."
-  :type 'integer
-  :group 'synaxis)
+(defconst synaxis-search--columns
+  `(("Date"  10        t)
+    (""      1         nil)
+    ("Feed"  ,(/ 1.0 8) t)
+    ("Tags"  ,(/ 1.0 8) nil)
+    ("Title" ,(/ 1.0 2) t))
+  "Column spec for the entry list.
+Each element is (NAME WIDTH-OR-FLOAT SORT . PROPS).
+Float widths are multiplied by `window-width' at render time;
+integer widths are absolute.")
 
 ;;; Faces
 
@@ -82,6 +85,19 @@ spec never forces an ellipsis."
 (defvar-local synaxis-search--filter nil
   "Current filter string for the list buffer.")
 
+(defvar-local synaxis-search--tag-face-cache nil
+  "Hash mapping tag string to face symbol.
+Rebuilt on each `synaxis-search-refresh' from the `tags' registry.
+Tag-face changes made while the buffer is open take effect on `g'.")
+
+(defun synaxis-search--rebuild-tag-face-cache ()
+  "Populate the buffer-local tag-face cache from the registry."
+  (let ((h (make-hash-table :test 'equal)))
+    (dolist (row (synaxis-db-list-tags))
+      (when-let* ((face-str (plist-get row :face)))
+        (puthash (plist-get row :tag) (intern face-str) h)))
+    (setq synaxis-search--tag-face-cache h)))
+
 ;;; Filter compilation
 
 (defun synaxis-search--compile-filter (filter)
@@ -93,15 +109,28 @@ spec never forces an ellipsis."
 
 ;;; Row formatting
 
+(defun synaxis-search--render-tags (tag-list)
+  "Render TAG-LIST as a propertized cell, excluding `unread'.
+Each tag picks up its face from `synaxis-search--tag-face-cache'."
+  (mapconcat
+   (lambda (tag)
+     (let ((face (and synaxis-search--tag-face-cache
+                      (gethash tag synaxis-search--tag-face-cache))))
+       (if face (propertize tag 'face face) tag)))
+   (cl-remove "unread" (sort (copy-sequence tag-list) #'string<)
+              :test #'string=)
+   " "))
+
 (defun synaxis-search--entry-columns (entry)
   "Convert ENTRY plist to the column vector used by `tabulated-list-mode'.
-Reads `:unread' from ENTRY rather than re-querying the DB."
+Reads `:unread' and `:tags' from ENTRY rather than re-querying the DB."
   (let* ((unread (plist-get entry :unread))
          (date   (format-time-string
                   "%Y-%m-%d"
                   (seconds-to-time (or (plist-get entry :date) 0))))
          (mark   (if unread "*" " "))
          (feed   (or (plist-get entry :feed-title) "?"))
+         (tags   (synaxis-search--render-tags (plist-get entry :tags)))
          (title  (or (plist-get entry :title) "(untitled)"))
          (title-face (if unread
                          'synaxis-search-unread-face
@@ -109,14 +138,25 @@ Reads `:unread' from ENTRY rather than re-querying the DB."
     (vector (propertize date 'face 'synaxis-search-date-face)
             mark
             (propertize feed 'face 'synaxis-search-feed-face)
+            tags
             (propertize title 'face title-face))))
 
 (defun synaxis-search--format ()
-  "Return the `tabulated-list-format' vector."
-  (vector (list "Date" 10 t)
-          (list ""     1  nil)
-          (list "Feed" 16 t)
-          (list "Title" synaxis-search-title-width t)))
+  "Build `tabulated-list-format' from `synaxis-search--columns'.
+Float widths in the spec are scaled by `window-width' at call time,
+so the format reflects the current window size."
+  (let ((w (window-width)))
+    (apply #'vector
+           (mapcar (lambda (col)
+                     (let* ((name  (car col))
+                            (spec  (nth 1 col))
+                            (sort  (nth 2 col))
+                            (props (nthcdr 3 col))
+                            (width (if (floatp spec)
+                                       (max 1 (truncate (* w spec)))
+                                     spec)))
+                       (append (list name width sort) props)))
+                   synaxis-search--columns))))
 
 ;;; Mode and keymap
 
@@ -174,9 +214,15 @@ Reads `:unread' from ENTRY rather than re-querying the DB."
     (pop-to-buffer-same-window buf)))
 
 (defun synaxis-search-refresh ()
-  "Re-run the current filter's query and repopulate the buffer."
+  "Re-run the current filter's query and repopulate the buffer.
+Also recomputes the column format from `synaxis-search--columns' so
+window resizes are picked up automatically, and rebuilds the
+tag-face cache from the registry."
   (interactive)
   (when (derived-mode-p 'synaxis-search-mode)
+    (setq tabulated-list-format (synaxis-search--format))
+    (tabulated-list-init-header)
+    (synaxis-search--rebuild-tag-face-cache)
     (let* ((spec    (synaxis-search--compile-filter
                      (or synaxis-search--filter "")))
            (where   (nth 0 spec))
