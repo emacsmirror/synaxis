@@ -232,7 +232,9 @@
          (should (eq face 'warning)))))))
 
 (ert-deftest synaxis-search-test-refresh-rebuilds-tag-face-cache ()
-  "Setting a tag face and refreshing picks up the change."
+  "Setting a tag face and refreshing picks up the change.
+Before set-tag-face the cell uses `synaxis-search-tag-face';
+after, it uses the registry override."
   (synaxis-search-tests--with-tmp
    (let ((id (synaxis-search-tests--add-entry
               "https://example.com/r" "1" "T" 1.0 nil)))
@@ -240,10 +242,12 @@
      (let ((synaxis-search-default-filter ""))
        (synaxis-search))
      (with-current-buffer "*synaxis*"
-       (let* ((row (cadr (car tabulated-list-entries))))
-         (should-not (get-text-property
-                      (or (string-match "wip" (aref row 3)) 0)
-                      'face (aref row 3))))
+       (let* ((row (cadr (car tabulated-list-entries)))
+              (cell (aref row 3))
+              (idx (string-match "wip" cell)))
+         (should idx)
+         (should (eq 'synaxis-search-tag-face
+                     (get-text-property idx 'face cell))))
        (synaxis-db-set-tag-face "wip" 'success)
        (synaxis-search-refresh)
        (let* ((row (cadr (car tabulated-list-entries)))
