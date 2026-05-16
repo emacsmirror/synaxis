@@ -31,6 +31,17 @@
 (require 'dom)
 (require 'url-parse)
 (require 'parse-time)
+(require 'url-queue)
+
+(defvar synaxis-http-request-headers)
+
+;;; Customisation
+
+(defcustom synaxis-scrape-max-parallel 4
+  "Maximum concurrent article fetches per scrape cycle.
+Bound around `url-queue-retrieve' as `url-queue-parallel-processes'."
+  :type 'integer
+  :group 'synaxis)
 
 ;;; Selector AST
 ;;
@@ -347,6 +358,62 @@ Pure: no HTTP, no DB.  Returns a list of entry plists."
                     (mapconcat (lambda (c) (if (stringp c) c ""))
                                (dom-children title-node) "")))))
     (synaxis-scrape--strip-title raw (plist-get rules :title-cleanup))))
+
+;;; Async per-article expansion
+
+(defun synaxis-scrape--apply-content (buffer rules)
+  "Return the content STRING extracted from BUFFER per RULES.
+Reads `:content-selector' and `:content-cleanup' from RULES."
+  (let* ((html (synaxis-scrape--decode-html buffer))
+         (dom  (with-temp-buffer
+                 (insert html)
+                 (libxml-parse-html-region (point-min) (point-max))))
+         (selector (plist-get rules :content-selector))
+         (node     (and selector (car (synaxis-scrape--query selector dom)))))
+    (when node
+      (synaxis-scrape--cleanup-content
+       node (plist-get rules :content-cleanup))
+      (synaxis-scrape--node-html node))))
+
+(defun synaxis-scrape--queue-article (entry rules tracker done-callback)
+  "Fetch ENTRY's :link asynchronously, apply RULES, update TRACKER.
+Calls DONE-CALLBACK with the entry list once all pending fetches return."
+  (let ((url-request-extra-headers synaxis-http-request-headers)
+        (url-queue-parallel-processes synaxis-scrape-max-parallel))
+    (url-queue-retrieve
+     (plist-get entry :link)
+     (lambda (_status entry rules tracker done-callback)
+       (unwind-protect
+           (let ((content (ignore-errors
+                            (synaxis-scrape--apply-content
+                             (current-buffer) rules))))
+             (when content
+               (plist-put entry :content content)))
+         (kill-buffer (current-buffer))
+         (synaxis-scrape--tracker-tick tracker entry done-callback)))
+     (list entry rules tracker done-callback)
+     t t)))
+
+(defun synaxis-scrape--tracker-tick (tracker entry done-callback)
+  "Mark ENTRY done in TRACKER; fire DONE-CALLBACK if all are in."
+  (let ((pending (plist-get tracker :pending)))
+    (plist-put tracker :done
+               (cons entry (plist-get tracker :done)))
+    (plist-put tracker :pending (1- pending))
+    (when (zerop (1- pending))
+      (funcall done-callback (nreverse (plist-get tracker :done))))))
+
+(defun synaxis-scrape--expand-content (entries rules callback)
+  "Fire async per-article fetches for ENTRIES, then call CALLBACK.
+CALLBACK receives the augmented entry list.  When RULES lacks
+`:content-selector', skips fetching and calls CALLBACK synchronously."
+  (cond
+   ((null entries) (funcall callback nil))
+   ((not (plist-get rules :content-selector))
+    (funcall callback entries))
+   (t (let ((tracker (list :pending (length entries) :done nil)))
+        (dolist (e entries)
+          (synaxis-scrape--queue-article e rules tracker callback))))))
 
 (provide 'synaxis-scrape)
 ;;; synaxis-scrape.el ends here
