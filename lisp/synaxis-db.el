@@ -159,7 +159,7 @@ Was specified in DESIGN.md but missing from the v1 baseline."
       meta             TEXT
     ) STRICT;"))
 
-(defvar synaxis-db--migrations
+(defconst synaxis-db--migrations
   '((1 . synaxis-db--migration-0-to-1)
     (2 . synaxis-db--migration-1-to-2)
     (3 . synaxis-db--migration-2-to-3))
@@ -168,7 +168,8 @@ FUNCTION takes the open DB and moves the schema from TARGET-VERSION-1
 to TARGET-VERSION.  Each call is wrapped in its own transaction by
 `synaxis-db--migrate'; functions need not manage transactions
 themselves.  Append a new entry when bumping
-`synaxis-db--schema-target-version'.")
+`synaxis-db--schema-target-version'.  Defined as `defconst' so
+re-evaluating this file picks up new migrations.")
 
 (defun synaxis-db--migrate (db from to)
   "Run pending migrations on DB for versions in (FROM, TO]."
