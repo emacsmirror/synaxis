@@ -43,7 +43,7 @@
           (cols (synaxis-search--entry-columns entry)))
      (should (string-match-p "2024" (aref cols 0)))
      (should (equal "*" (aref cols 1)))
-     (should (string-match-p "Hello world" (aref cols 3))))))
+     (should (string-match-p "Hello world" (aref cols 4))))))
 
 (ert-deftest synaxis-search-test-refresh-populates-tabulated-list ()
   (synaxis-search-tests--with-tmp
@@ -96,7 +96,7 @@
    (synaxis-search)
    (with-current-buffer "*synaxis*"
      (let ((titles (mapcar (lambda (e)
-                             (substring-no-properties (aref (cadr e) 3)))
+                             (substring-no-properties (aref (cadr e) 4)))
                            tabulated-list-entries)))
        (should (equal '("Unread") titles))))))
 
@@ -199,6 +199,58 @@
    (with-current-buffer "*synaxis*"
      (should-error (call-interactively 'synaxis-search-mark-all-read)
                    :type 'user-error))))
+
+(ert-deftest synaxis-search-test-entry-columns-renders-tags-excluding-unread ()
+  "Tags cell shows other tags but omits `unread'."
+  (synaxis-search-tests--with-tmp
+   (let ((id (synaxis-search-tests--add-entry
+              "https://example.com/tg" "1" "T" 1.0 t)))
+     (synaxis-db-add-tag id "starred")
+     (let ((synaxis-search-default-filter ""))
+       (synaxis-search))
+     (with-current-buffer "*synaxis*"
+       (let* ((row (cadr (car tabulated-list-entries)))
+              (tags-cell (substring-no-properties (aref row 3))))
+         (should (string-match-p "starred" tags-cell))
+         (should-not (string-match-p "unread" tags-cell)))))))
+
+(ert-deftest synaxis-search-test-entry-columns-applies-tag-face ()
+  "Tag face from the registry is applied to the rendered tag."
+  (synaxis-search-tests--with-tmp
+   (let ((id (synaxis-search-tests--add-entry
+              "https://example.com/face" "1" "T" 1.0 nil)))
+     (synaxis-db-add-tag id "highlight")
+     (synaxis-db-set-tag-face "highlight" 'warning)
+     (let ((synaxis-search-default-filter ""))
+       (synaxis-search))
+     (with-current-buffer "*synaxis*"
+       (let* ((row (cadr (car tabulated-list-entries)))
+              (cell (aref row 3))
+              (idx (string-match "highlight" cell))
+              (face (get-text-property idx 'face cell)))
+         (should idx)
+         (should (eq face 'warning)))))))
+
+(ert-deftest synaxis-search-test-refresh-rebuilds-tag-face-cache ()
+  "Setting a tag face and refreshing picks up the change."
+  (synaxis-search-tests--with-tmp
+   (let ((id (synaxis-search-tests--add-entry
+              "https://example.com/r" "1" "T" 1.0 nil)))
+     (synaxis-db-add-tag id "wip")
+     (let ((synaxis-search-default-filter ""))
+       (synaxis-search))
+     (with-current-buffer "*synaxis*"
+       (let* ((row (cadr (car tabulated-list-entries))))
+         (should-not (get-text-property
+                      (or (string-match "wip" (aref row 3)) 0)
+                      'face (aref row 3))))
+       (synaxis-db-set-tag-face "wip" 'success)
+       (synaxis-search-refresh)
+       (let* ((row (cadr (car tabulated-list-entries)))
+              (cell (aref row 3))
+              (idx (string-match "wip" cell)))
+         (should idx)
+         (should (eq 'success (get-text-property idx 'face cell))))))))
 
 (provide 'synaxis-search-tests)
 ;;; synaxis-search-tests.el ends here
