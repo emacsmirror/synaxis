@@ -81,7 +81,7 @@ integer widths are absolute.")
   :group 'synaxis)
 
 (defface synaxis-search-tag-face
-  '((t :inherit font-lock-constant-face))
+  '((t :inherit font-lock-keyword-face))
   "Default face for entry tags in the list buffer.
 Per-tag faces from the registry (set via `synaxis-db-set-tag-face')
 override this default."
