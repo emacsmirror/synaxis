@@ -51,17 +51,11 @@ and cleared by `synaxis-edit-quit'.")
        (let ((feed (synaxis-db-get-feed synaxis-edit--current-url)))
          (and feed (string= "scrape" (plist-get feed :type))))))
 
-(defun synaxis-edit--has-content-selector-p ()
-  "Non-nil if the current scrape rule has a content selector set."
+(defun synaxis-edit--has-rule-p (key)
+  "Non-nil when the current scrape rule has KEY set."
   (and (synaxis-edit--scrape-feed-p)
        (plist-get (synaxis-db-get-scrape-rule synaxis-edit--current-url)
-                  :content-selector)))
-
-(defun synaxis-edit--has-date-selector-p ()
-  "Non-nil if the current scrape rule has a date selector set."
-  (and (synaxis-edit--scrape-feed-p)
-       (plist-get (synaxis-db-get-scrape-rule synaxis-edit--current-url)
-                  :date-selector)))
+                  key)))
 
 ;;; Field formatters
 
@@ -229,7 +223,7 @@ underlying stored value is untouched."
        :if (lambda () (synaxis-edit--scrape-feed-p)))
   "C" ((lambda () (synaxis-edit--rule-line "Content cleanup" :content-cleanup))
        synaxis-edit-set-content-cleanup
-       :if (lambda () (synaxis-edit--has-content-selector-p)))
+       :if (lambda () (synaxis-edit--has-rule-p :content-selector)))
   "T" ((lambda () (synaxis-edit--rule-line "Title cleanup" :title-cleanup))
        synaxis-edit-set-title-cleanup
        :if (lambda () (synaxis-edit--scrape-feed-p)))
@@ -238,7 +232,7 @@ underlying stored value is untouched."
        :if (lambda () (synaxis-edit--scrape-feed-p)))
   "D" ((lambda () (synaxis-edit--rule-line "Date format" :date-format))
        synaxis-edit-set-date-format
-       :if (lambda () (synaxis-edit--has-date-selector-p)))
+       :if (lambda () (synaxis-edit--has-rule-p :date-selector)))
   "L" ((lambda () (synaxis-edit--rule-line "Limit" :limit))
        synaxis-edit-set-limit
        :if (lambda () (synaxis-edit--scrape-feed-p)))
