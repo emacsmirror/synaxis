@@ -211,8 +211,11 @@ is resolved (nil leaves the raw href in place)."
 
 (defun synaxis-parse--xml-base (node parent-base)
   "Return NODE's effective xml:base resolved against PARENT-BASE.
-Falls back to PARENT-BASE when the attribute is absent."
-  (let ((attr (dom-attr node 'xml:base)))
+Falls back to PARENT-BASE when the attribute is absent.  Note
+that `libxml-parse-xml-region' strips the implicit `xml:'
+namespace prefix, so the attribute lands on the DOM under the
+bare symbol `base'."
+  (let ((attr (dom-attr node 'base)))
     (or (synaxis-parse--resolve-url parent-base attr)
         parent-base)))
 
