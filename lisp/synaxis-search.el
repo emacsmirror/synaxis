@@ -34,6 +34,8 @@
 (declare-function synaxis-add-feed "synaxis" (url &optional title))
 (declare-function synaxis-remove-feed "synaxis" (url))
 
+(defvar crm-separator)
+
 ;;; Customisation
 
 (defcustom synaxis-search-default-filter "tag:unread"
@@ -188,8 +190,7 @@ so the format reflects the current window size."
   :group "Tags"
   "r" ("Toggle read"     synaxis-search-toggle-read :stay-open t)
   "R" ("Mark all read"   synaxis-search-mark-all-read)
-  "+" ("Add tag"         synaxis-search-tag-entry :stay-open t)
-  "-" ("Remove tag"      synaxis-search-untag-entry :stay-open t)
+  "t" ("Edit tags"       synaxis-search-edit-tags :stay-open t)
   :group "Feeds"
   "A" ("Add feed"     synaxis-add-feed)
   "D" ("Remove feed"  synaxis-remove-feed)
@@ -290,6 +291,53 @@ and `p' can step between sibling entries."
       (synaxis-db-add-tag id "unread"))
     (synaxis-search--redraw-current)))
 
+(defun synaxis-search--tag-candidates (entry-id)
+  "Return `+absent' / `-present' candidate strings for ENTRY-ID.
+Pulls all registered tag names from `synaxis-db-list-tags' and
+marks each as add (`+') or remove (`-') based on the entry's
+current tag membership."
+  (let* ((all (sort (mapcar (lambda (r) (plist-get r :tag))
+                            (synaxis-db-list-tags))
+                    #'string<))
+         (current (synaxis-db-get-tags entry-id)))
+    (mapcar (lambda (name)
+              (concat (if (member name current) "-" "+") name))
+            all)))
+
+(defun synaxis-search--apply-tag-edits (entry-id selections)
+  "Apply tag-edit SELECTIONS to ENTRY-ID inside a single transaction.
+Each SELECTION is `+NAME' (add), `-NAME' (remove), or a bare NAME
+\(treated as add, so new tag names typed at the prompt work)."
+  (let ((db (synaxis-db--ensure-open)))
+    (synaxis-db--with-transaction db
+      (dolist (sel selections)
+        (cond
+         ((string-prefix-p "+" sel)
+          (let ((name (substring sel 1)))
+            (unless (string-empty-p name)
+              (synaxis-db-add-tag entry-id name))))
+         ((string-prefix-p "-" sel)
+          (let ((name (substring sel 1)))
+            (unless (string-empty-p name)
+              (synaxis-db-remove-tag entry-id name))))
+         ((not (string-empty-p sel))
+          (synaxis-db-add-tag entry-id sel)))))))
+
+(defun synaxis-search-edit-tags ()
+  "Add or remove tags on the entry at point via `completing-read-multiple'.
+Candidates are prefixed `+' (absent) or `-' (already on the entry);
+new tag names may also be typed.  Separator is `,'."
+  (interactive)
+  (when-let* ((id (synaxis-search-current-entry)))
+    (let* ((cands (synaxis-search--tag-candidates id))
+           (crm-separator ",")
+           (selections (mapcar #'string-trim
+                               (completing-read-multiple
+                                "Tags (+add, -remove): " cands nil nil))))
+      (when selections
+        (synaxis-search--apply-tag-edits id selections)
+        (synaxis-search--redraw-current)))))
+
 (defun synaxis-search-tag-entry (tag)
   "Add TAG to the entry at point.
 Completes against existing tags but accepts new ones."
@@ -313,7 +361,6 @@ Completes against the entry's current tags only."
     (synaxis-db-remove-tag id tag)
     (synaxis-search--redraw-current)))
 
-(defvar crm-separator)
 
 (defun synaxis-search--read-filter (default)
   "Read a filter string with `completing-read-multiple' and `,' separator.
