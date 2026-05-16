@@ -58,13 +58,100 @@
      (should (= 51 saw))
      (should (= 51 (caar (sqlite-select db "SELECT version FROM schema_version;")))))))
 
+;;; v2 schema and migration
+
+(ert-deftest synaxis-db-test-v2-tags-table-present ()
+  "Fresh install has the `tags' registry table."
+  (synaxis-db-tests--with-tmp
+   (let ((db (synaxis-db--ensure-open)))
+     (should (sqlite-select
+              db "SELECT name FROM sqlite_master
+                  WHERE type='table' AND name='tags';")))))
+
+(ert-deftest synaxis-db-test-entry-tags-fk-enforces-tag-existence ()
+  "Inserting into entry_tags with an unregistered tag errors."
+  (synaxis-db-tests--with-tmp
+   (synaxis-db-add-feed "https://example.com/fk")
+   (let ((db (synaxis-db--ensure-open))
+         (id (synaxis-db-upsert-entry
+              '(:feed-url "https://example.com/fk" :source-id "1"
+                          :title "T" :date 1.0))))
+     (should-error
+      (sqlite-execute db
+                      "INSERT INTO entry_tags (entry_id, tag) VALUES (?, ?);"
+                      (list id "unregistered"))))))
+
+(ert-deftest synaxis-db-test-tag-rename-via-update-cascades ()
+  "Updating tags.tag propagates to entry_tags via FK cascade."
+  (synaxis-db-tests--with-tmp
+   (synaxis-db-add-feed "https://example.com/c")
+   (let ((id (synaxis-db-upsert-entry
+              '(:feed-url "https://example.com/c" :source-id "1"
+                          :title "T" :date 1.0))))
+     (synaxis-db-add-tag id "rust")
+     (let ((db (synaxis-db--ensure-open)))
+       (sqlite-execute db "UPDATE tags SET tag = 'Rust' WHERE tag = 'rust';"))
+     (should (member "Rust" (synaxis-db-get-tags id)))
+     (should-not (member "rust" (synaxis-db-get-tags id))))))
+
+(ert-deftest synaxis-db-test-tag-delete-cascades ()
+  "Deleting a row in tags cascades to entry_tags."
+  (synaxis-db-tests--with-tmp
+   (synaxis-db-add-feed "https://example.com/d")
+   (let ((id (synaxis-db-upsert-entry
+              '(:feed-url "https://example.com/d" :source-id "1"
+                          :title "T" :date 1.0))))
+     (synaxis-db-add-tag id "tmp")
+     (let ((db (synaxis-db--ensure-open)))
+       (sqlite-execute db "DELETE FROM tags WHERE tag = 'tmp';"))
+     (should-not (member "tmp" (synaxis-db-get-tags id))))))
+
+(ert-deftest synaxis-db-test-migration-1-to-2-preserves-data ()
+  "Seeding a v1 DB then bootstrapping migrates entry_tags rows intact."
+  (synaxis-db-tests--with-tmp
+   ;; Build a v1 database manually, side-stepping the bootstrap.
+   (let* ((file (expand-file-name "v1.db"
+                                  (file-name-directory synaxis-db-file)))
+          (synaxis-db-file file)
+          (db (sqlite-open file)))
+     (sqlite-pragma db "foreign_keys = ON")
+     (sqlite-execute db "CREATE TABLE schema_version (version INTEGER NOT NULL);")
+     (sqlite-execute db "INSERT INTO schema_version (version) VALUES (1);")
+     (dolist (stmt synaxis-db--v1-statements)
+       (sqlite-execute db stmt))
+     ;; Seed feed + entry + two tags.
+     (sqlite-execute db "INSERT INTO feeds (url) VALUES ('https://x');")
+     (sqlite-execute db
+                     "INSERT INTO entries (feed_url, source_id, date)
+                      VALUES ('https://x', 'a', 1.0);")
+     (sqlite-execute db
+                     "INSERT INTO entry_tags (entry_id, tag) VALUES (1, 'unread');")
+     (sqlite-execute db
+                     "INSERT INTO entry_tags (entry_id, tag) VALUES (1, 'rust');")
+     (sqlite-close db)
+     ;; Now reopen via the synaxis bootstrap, which should migrate to v2.
+     (setq synaxis-db--connection nil)
+     (let ((db (synaxis-db--ensure-open)))
+       (should (= 2 (caar (sqlite-select db "SELECT version FROM schema_version;"))))
+       (should (equal '(("rust") ("unread"))
+                      (sqlite-select
+                       db "SELECT tag FROM tags ORDER BY tag;")))
+       ;; system flag set for `unread' only.
+       (should (= 1 (caar (sqlite-select
+                           db "SELECT system FROM tags WHERE tag = 'unread';"))))
+       (should (= 0 (caar (sqlite-select
+                           db "SELECT system FROM tags WHERE tag = 'rust';"))))
+       ;; entry_tags rows preserved.
+       (should (= 2 (caar (sqlite-select db "SELECT COUNT(*) FROM entry_tags;"))))))))
+
 ;;; Bootstrap
 
 (ert-deftest synaxis-db-test-bootstrap-creates-schema-version ()
-  "On first open the schema_version row is set to 1."
+  "On first open the schema_version row is set to the current target."
   (synaxis-db-tests--with-tmp
    (let ((db (synaxis-db--ensure-open)))
-     (should (equal '((1)) (sqlite-select db "SELECT version FROM schema_version;"))))))
+     (should (= synaxis-db--schema-target-version
+                (caar (sqlite-select db "SELECT version FROM schema_version;")))))))
 
 ;;; Feeds
 
