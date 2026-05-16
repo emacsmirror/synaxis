@@ -256,5 +256,89 @@ after, it uses the registry override."
          (should idx)
          (should (eq 'success (get-text-property idx 'face cell))))))))
 
+(ert-deftest synaxis-search-test-edit-tags-adds-with-plus-prefix ()
+  (synaxis-search-tests--with-tmp
+    (let ((id (synaxis-search-tests--add-entry
+               "https://example.com/e" "1" "T" 1.0 nil)))
+      (let ((synaxis-search-default-filter ""))
+        (synaxis-search))
+      (with-current-buffer "*synaxis*"
+        (goto-char (point-min))
+        (cl-letf (((symbol-function 'completing-read-multiple)
+                   (lambda (&rest _) (list "+rust"))))
+          (call-interactively 'synaxis-search-edit-tags))
+        (should (member "rust" (synaxis-db-get-tags id)))))))
+
+(ert-deftest synaxis-search-test-edit-tags-removes-with-minus-prefix ()
+  (synaxis-search-tests--with-tmp
+    (let ((id (synaxis-search-tests--add-entry
+               "https://example.com/e" "1" "T" 1.0 t)))
+      (synaxis-db-add-tag id "starred")
+      (let ((synaxis-search-default-filter ""))
+        (synaxis-search))
+      (with-current-buffer "*synaxis*"
+        (goto-char (point-min))
+        (cl-letf (((symbol-function 'completing-read-multiple)
+                   (lambda (&rest _) (list "-starred"))))
+          (call-interactively 'synaxis-search-edit-tags))
+        (should-not (member "starred" (synaxis-db-get-tags id)))
+        (should (member "unread" (synaxis-db-get-tags id)))))))
+
+(ert-deftest synaxis-search-test-edit-tags-mixed-add-and-remove ()
+  (synaxis-search-tests--with-tmp
+    (let ((id (synaxis-search-tests--add-entry
+               "https://example.com/e" "1" "T" 1.0 t)))
+      (let ((synaxis-search-default-filter ""))
+        (synaxis-search))
+      (with-current-buffer "*synaxis*"
+        (goto-char (point-min))
+        (cl-letf (((symbol-function 'completing-read-multiple)
+                   (lambda (&rest _) (list "+rust" "-unread" "+hot"))))
+          (call-interactively 'synaxis-search-edit-tags))
+        (let ((tags (synaxis-db-get-tags id)))
+          (should     (member "rust" tags))
+          (should     (member "hot"  tags))
+          (should-not (member "unread" tags)))))))
+
+(ert-deftest synaxis-search-test-edit-tags-bare-name-adds ()
+  "A bare typed name (no `+`/`-`) is treated as add."
+  (synaxis-search-tests--with-tmp
+    (let ((id (synaxis-search-tests--add-entry
+               "https://example.com/e" "1" "T" 1.0 nil)))
+      (let ((synaxis-search-default-filter ""))
+        (synaxis-search))
+      (with-current-buffer "*synaxis*"
+        (goto-char (point-min))
+        (cl-letf (((symbol-function 'completing-read-multiple)
+                   (lambda (&rest _) (list "fresh-tag"))))
+          (call-interactively 'synaxis-search-edit-tags))
+        (should (member "fresh-tag" (synaxis-db-get-tags id)))))))
+
+(ert-deftest synaxis-search-test-edit-tags-empty-input-noop ()
+  (synaxis-search-tests--with-tmp
+    (let ((id (synaxis-search-tests--add-entry
+               "https://example.com/e" "1" "T" 1.0 t)))
+      (let ((synaxis-search-default-filter ""))
+        (synaxis-search))
+      (with-current-buffer "*synaxis*"
+        (goto-char (point-min))
+        (cl-letf (((symbol-function 'completing-read-multiple)
+                   (lambda (&rest _) nil)))
+          (call-interactively 'synaxis-search-edit-tags))
+        (should (equal '("unread") (synaxis-db-get-tags id)))))))
+
+(ert-deftest synaxis-search-test-tag-candidates-marks-current-with-minus ()
+  (synaxis-search-tests--with-tmp
+    (let ((id (synaxis-search-tests--add-entry
+               "https://example.com/c" "1" "T" 1.0 t)))
+      (synaxis-db-add-tag id "alpha")
+      ;; Register an unattached tag too.
+      (let ((db (synaxis-db--ensure-open)))
+        (sqlite-execute db "INSERT INTO tags (tag) VALUES ('beta');"))
+      (let ((cands (synaxis-search--tag-candidates id)))
+        (should (member "-alpha"  cands))
+        (should (member "-unread" cands))
+        (should (member "+beta"   cands))))))
+
 (provide 'synaxis-search-tests)
 ;;; synaxis-search-tests.el ends here
