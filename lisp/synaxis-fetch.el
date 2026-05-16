@@ -72,6 +72,76 @@ modified) plist, or nil to skip the entry.")
   "Non-nil if URL is currently being fetched."
   (gethash url synaxis-fetch--in-flight))
 
+;;; Conditional GET workaround
+
+;; Background -- why this advice exists, in case a reviewer asks:
+;;
+;; `url-http' (Emacs core, lisp/url/url-http.el line ~728) handles a
+;; 304 Not Modified response by unconditionally calling
+;; (url-cache-extract (url-cache-create-filename (url-view-url t))).
+;; That helper does:
+;;   (erase-buffer)
+;;   (set-buffer-multibyte nil)
+;;   (insert-file-contents-literally fnam)
+;; with no existence check.
+;;
+;; Synaxis keeps cache headers (ETag, Last-Modified) in its own
+;; SQLite DB and never writes anything to `url-cache-directory'.  So
+;; on a 304, `url-cache-extract' tries to read a file that does not
+;; exist and raises an error, which surfaces as a fetch failure in
+;; our callback even though the conditional GET succeeded.
+;;
+;; The fix is :around advice that treats a missing cache file as a
+;; no-op instead of an error.  When the file exists (i.e. some other
+;; package did populate url-cache for this URL) the original
+;; behaviour runs unchanged.  When the file is missing we leave the
+;; response buffer alone so its HTTP headers remain readable, and
+;; `synaxis-fetch--parse-response' detects the 304 from the status
+;; line and dispatches our "no new content" branch.
+;;
+;; Scope: the advice is installed only while we have at least one
+;; fetch in flight (see `synaxis-fetch-feed' and
+;; `synaxis-fetch--callback') so it does not affect non-synaxis
+;; url.el callers during idle periods.
+;;
+;; cl-letf cannot be used here: `url-queue-retrieve' enqueues the
+;; request and returns synchronously, but `url-cache-extract' is
+;; called later in url-http's async response handler, by which time
+;; cl-letf's dynamic binding has unwound.
+
+(defvar synaxis-fetch--cache-advice-active nil
+  "Non-nil while our `url-cache-extract' :around advice is installed.")
+
+(defun synaxis-fetch--url-cache-extract-safe (orig fnam)
+  "Around-advice on `url-cache-extract' tolerating a missing cache file.
+See the commentary above this function for the full reasoning."
+  (if (file-exists-p fnam)
+      (funcall orig fnam)
+    nil))
+
+(defun synaxis-fetch--cache-advice-toggle (on)
+  "Install (ON non-nil) or remove the cache-extract :around advice.
+Idempotent: tracks state via `synaxis-fetch--cache-advice-active'."
+  (cond
+   ((and on (not synaxis-fetch--cache-advice-active))
+    (advice-add 'url-cache-extract :around
+                #'synaxis-fetch--url-cache-extract-safe)
+    (setq synaxis-fetch--cache-advice-active t))
+   ((and (not on) synaxis-fetch--cache-advice-active)
+    (advice-remove 'url-cache-extract
+                   #'synaxis-fetch--url-cache-extract-safe)
+    (setq synaxis-fetch--cache-advice-active nil))))
+
+(defun synaxis-fetch--conditional-headers (feed)
+  "Return `If-None-Match' / `If-Modified-Since' headers from FEED, or nil.
+FEED is a feed plist as returned by `synaxis-db-get-feed'."
+  (let (h)
+    (when-let* ((etag (and feed (plist-get feed :etag))))
+      (push (cons "If-None-Match" etag) h))
+    (when-let* ((lm (and feed (plist-get feed :last-modified))))
+      (push (cons "If-Modified-Since" lm) h))
+    h))
+
 ;;; Response parsing
 
 (defun synaxis-fetch--parse-response (buffer)
@@ -128,7 +198,7 @@ Updates the DB, runs hooks, and tracks cache headers and failures."
     (cond
      ((eql status 304)
       (synaxis-db-set-feed-cache-headers
-       url (list :last-fetched (float-time))))
+       url (list :last-fetched (float-time) :failures 0)))
      ((and (integerp status) (>= status 200) (< status 300))
       (synaxis-fetch--ingest url (plist-get resp :body) headers))
      (t
@@ -177,11 +247,13 @@ fresh insert in addition to `unread'."
   "Asynchronously fetch URL via `url-queue-retrieve'.
 No-op if a fetch for URL is already in flight.
 
-Conditional GET is intentionally NOT sent: `url-http' unconditionally
-calls `url-cache-extract' on a 304 response, which errors when the
-url-cache directory has not been populated (synaxis stores ETags in
-its own DB, not in url-cache).  We still record the response's ETag
-and Last-Modified for a future, custom HTTP path."
+When the feed has a stored ETag or Last-Modified from a prior
+fetch, those are sent as `If-None-Match' / `If-Modified-Since'.
+A 304 Not Modified response is handled in
+`synaxis-fetch--process-response'.  See
+`synaxis-fetch--url-cache-extract-safe' for the workaround that
+keeps url-http's hardcoded `url-cache-extract' call on 304 from
+crashing when synaxis does not warm `url-cache-directory'."
   (unless (synaxis-fetch--in-flight-p url)
     (let* ((feed (synaxis-db-get-feed url))
            (type (and feed (plist-get feed :type))))
@@ -194,9 +266,13 @@ and Last-Modified for a future, custom HTTP path."
            (message "synaxis: scrape failed for %s: %S" url err)
            (synaxis-fetch--record-failure url))))
        (t
-        (let ((url-queue-parallel-processes synaxis-fetch-max-parallel)
-              (url-queue-timeout             synaxis-fetch-timeout)
-              (url-request-extra-headers     synaxis-http-request-headers))
+        (let* ((cond-headers (synaxis-fetch--conditional-headers feed))
+               (url-queue-parallel-processes synaxis-fetch-max-parallel)
+               (url-queue-timeout             synaxis-fetch-timeout)
+               (url-request-extra-headers
+                (append cond-headers synaxis-http-request-headers)))
+          (when (zerop (hash-table-count synaxis-fetch--in-flight))
+            (synaxis-fetch--cache-advice-toggle t))
           (puthash url t synaxis-fetch--in-flight)
           (url-queue-retrieve url #'synaxis-fetch--callback (list url) t t)))))))
 
@@ -206,6 +282,8 @@ and Last-Modified for a future, custom HTTP path."
     (unwind-protect
         (synaxis-fetch--process-response buf url)
       (remhash url synaxis-fetch--in-flight)
+      (when (zerop (hash-table-count synaxis-fetch--in-flight))
+        (synaxis-fetch--cache-advice-toggle nil))
       (when (buffer-live-p buf)
         (kill-buffer buf)))))
 
