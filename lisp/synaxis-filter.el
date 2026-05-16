@@ -263,7 +263,7 @@ Negated when NEGATED."
                 (push clause parts)
                 (dolist (p ps) (push p params))))
       (dolist (tok tokens)
-        (pcase (car tok)
+        (pcase-exhaustive (car tok)
           ('tag         (emit synaxis-filter--exists-sql     (cdr tok)))
           ('not-tag     (emit synaxis-filter--not-exists-sql (cdr tok)))
           ('feed        (pcase-let ((`(,c . ,p) (synaxis-filter--like-token "f.title"   (cdr tok) nil)))
