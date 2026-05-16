@@ -268,16 +268,18 @@ options can't be parsed."
   "Column list used to project feed rows into plists.")
 
 (defun synaxis-db-add-feed (url &optional plist)
-  "Insert or replace feed URL.
-PLIST may contain `:title', `:type', `:meta'."
+  "Insert or upsert feed URL.
+PLIST may contain `:title', `:type', `:meta'.  Keys absent from PLIST
+keep the existing column values (`COALESCE') rather than clobbering
+them with nil."
   (let ((db (synaxis-db--ensure-open)))
     (sqlite-execute
      db
      "INSERT INTO feeds (url, title, type, meta) VALUES (?, ?, ?, ?)
       ON CONFLICT(url) DO UPDATE SET
-        title = excluded.title,
-        type  = excluded.type,
-        meta  = excluded.meta;"
+        title = COALESCE(excluded.title, title),
+        type  = COALESCE(excluded.type,  type),
+        meta  = COALESCE(excluded.meta,  meta);"
      (list url
            (plist-get plist :title)
            (or (plist-get plist :type) "rss")
