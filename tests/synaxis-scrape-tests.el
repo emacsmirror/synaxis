@@ -113,5 +113,65 @@
   (let* ((dom (synaxis-scrape-tests--dom "scrape-basic.html")))
     (should (null (synaxis-scrape--query ".nope" dom)))))
 
+;;; URL resolution
+
+(ert-deftest synaxis-scrape-test-resolve-url-absolute ()
+  (should (equal "https://x.example/y"
+                 (synaxis-scrape--resolve-url "https://base.example/foo"
+                                              "https://x.example/y"))))
+
+(ert-deftest synaxis-scrape-test-resolve-url-root-relative ()
+  (should (equal "https://base.example/post/1"
+                 (synaxis-scrape--resolve-url "https://base.example/blog/"
+                                              "/post/1"))))
+
+(ert-deftest synaxis-scrape-test-resolve-url-protocol-relative ()
+  (should (equal "https://cdn.example/x"
+                 (synaxis-scrape--resolve-url "https://base.example/"
+                                              "//cdn.example/x"))))
+
+(ert-deftest synaxis-scrape-test-resolve-url-fragment ()
+  (should (equal "https://base.example/page#sec"
+                 (synaxis-scrape--resolve-url "https://base.example/page"
+                                              "#sec"))))
+
+(ert-deftest synaxis-scrape-test-resolve-url-nil ()
+  (should-not (synaxis-scrape--resolve-url "https://x.example/" nil))
+  (should-not (synaxis-scrape--resolve-url "https://x.example/" "")))
+
+;;; Date extraction
+
+(ert-deftest synaxis-scrape-test-extract-date-from-datetime-attr ()
+  (let* ((dom (synaxis-scrape-tests--dom "scrape-article.html"))
+         (date (synaxis-scrape--extract-date dom "time")))
+    (should (numberp date))
+    (should (= date (float-time (encode-time (parse-time-string
+                                              "2024-05-12T09:00:00Z")))))))
+
+(ert-deftest synaxis-scrape-test-extract-date-nil-selector ()
+  (should-not (synaxis-scrape--extract-date 'whatever nil)))
+
+;;; Content cleanup
+
+(ert-deftest synaxis-scrape-test-cleanup-removes-matching-children ()
+  (let* ((dom (synaxis-scrape-tests--dom "scrape-article.html"))
+         (article (car (synaxis-scrape--query "article" dom))))
+    (synaxis-scrape--cleanup-content article ".ads, .related-posts")
+    (should-not (synaxis-scrape--query ".ads" article))
+    (should-not (synaxis-scrape--query ".related-posts" article))
+    ;; The actual body paragraphs remain.
+    (should (synaxis-scrape--query "p" article))))
+
+;;; Title cleanup
+
+(ert-deftest synaxis-scrape-test-strip-title ()
+  (should (equal "Article Title"
+                 (synaxis-scrape--strip-title "Article Title - Example News"
+                                              " - Example News"))))
+
+(ert-deftest synaxis-scrape-test-strip-title-handles-nils ()
+  (should (equal "Title" (synaxis-scrape--strip-title "Title" nil)))
+  (should (equal "" (synaxis-scrape--strip-title nil " - foo"))))
+
 (provide 'synaxis-scrape-tests)
 ;;; synaxis-scrape-tests.el ends here
