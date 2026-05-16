@@ -21,6 +21,7 @@
 
 ;;; Code:
 
+(require 'cl-lib)
 (require 'sqlite)
 
 (defvar synaxis-testing nil
@@ -59,7 +60,12 @@ entries, auto-save) honours this flag.  Defined here because
 (defvar synaxis-db--connection nil
   "Cached SQLite connection, or nil if not yet opened.")
 
-(defconst synaxis-db--schema-statements
+(defconst synaxis-db--schema-target-version 1
+  "Schema version the bootstrapper migrates databases up to.
+Bump this and append a new entry to `synaxis-db--migrations' when
+adding a schema change.")
+
+(defconst synaxis-db--v1-statements
   '("CREATE TABLE IF NOT EXISTS feeds (
        url           TEXT    PRIMARY KEY,
        title         TEXT,
@@ -90,18 +96,44 @@ entries, auto-save) honours this flag.  Defined here because
        PRIMARY KEY (entry_id, tag)
      ) STRICT;"
     "CREATE INDEX IF NOT EXISTS entry_tags_tag ON entry_tags (tag);")
-  "DDL statements applied when bootstrapping a fresh database.")
+  "DDL statements for v1 (baseline feeds/entries/entry_tags schema).")
+
+(defun synaxis-db--migration-0-to-1 (db)
+  "Apply the v1 baseline schema to DB."
+  (dolist (stmt synaxis-db--v1-statements)
+    (sqlite-execute db stmt)))
+
+(defvar synaxis-db--migrations
+  '((1 . synaxis-db--migration-0-to-1))
+  "Alist of (TARGET-VERSION . FUNCTION).
+FUNCTION takes the open DB and moves the schema from TARGET-VERSION-1
+to TARGET-VERSION.  Each call is wrapped in its own transaction by
+`synaxis-db--migrate'; functions need not manage transactions
+themselves.  Append a new entry when bumping
+`synaxis-db--schema-target-version'.")
+
+(defun synaxis-db--migrate (db from to)
+  "Run pending migrations on DB for versions in (FROM, TO]."
+  (cl-loop for v from (1+ from) to to
+           for fn = (cdr (assq v synaxis-db--migrations))
+           when fn
+           do (synaxis-db--with-transaction db
+                (funcall fn db)
+                (sqlite-execute db
+                                "UPDATE schema_version SET version = ?;"
+                                (list v)))))
 
 (defun synaxis-db--bootstrap (db)
-  "Ensure the schema is present in DB.
-Inserts the version row on first creation only."
+  "Ensure DB is at `synaxis-db--schema-target-version'.
+Records v0 as the starting point for fresh installs and applies
+every pending entry in `synaxis-db--migrations' in order."
   (sqlite-execute db
                   "CREATE TABLE IF NOT EXISTS schema_version (version INTEGER NOT NULL);")
   (unless (sqlite-select db "SELECT version FROM schema_version LIMIT 1;")
-    (synaxis-db--with-transaction db
-      (dolist (stmt synaxis-db--schema-statements)
-	(sqlite-execute db stmt))
-      (sqlite-execute db "INSERT INTO schema_version (version) VALUES (1);"))))
+    (sqlite-execute db "INSERT INTO schema_version (version) VALUES (0);"))
+  (let ((current (caar (sqlite-select db "SELECT version FROM schema_version;"))))
+    (when (< current synaxis-db--schema-target-version)
+      (synaxis-db--migrate db current synaxis-db--schema-target-version))))
 
 (defun synaxis-db--open ()
   "Open `synaxis-db-file', enable foreign keys, bootstrap schema."
