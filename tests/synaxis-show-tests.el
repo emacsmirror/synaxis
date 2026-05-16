@@ -119,5 +119,42 @@
       (with-current-buffer "*synaxis-show*"
         (should-error (synaxis-show--walk +1) :type 'user-error)))))
 
+(ert-deftest synaxis-show-test-walk-syncs-list-point-to-new-entry ()
+  "After walk +1 from the show buffer, point in `*synaxis*' lands on the new row."
+  (synaxis-show-tests--with-tmp
+    (require 'synaxis-search)
+    (synaxis-db-add-feed "https://example.com/n")
+    (let ((ids (cl-loop for i below 3
+                        collect (synaxis-db-upsert-entry
+                                 `(:feed-url "https://example.com/n"
+                                             :source-id ,(format "%d" i)
+                                             :title ,(format "T%d" i)
+                                             :date ,(float (- 10 i)))))))
+      (let ((buf (get-buffer-create "*synaxis*")))
+        (with-current-buffer buf
+          (synaxis-search-mode)
+          (setq synaxis-search--filter "")
+          (synaxis-search-refresh))
+        (synaxis-show-entry (nth 0 ids) ids)
+        (with-current-buffer "*synaxis-show*"
+          (synaxis-show--walk +1))
+        (with-current-buffer buf
+          (should (equal (nth 1 ids) (tabulated-list-get-id))))))))
+
+(ert-deftest synaxis-show-test-walk-noop-when-no-list-buffer ()
+  "Walking when `*synaxis*' is absent still navigates, no error."
+  (synaxis-show-tests--with-tmp
+    (synaxis-db-add-feed "https://example.com/n")
+    (let ((ids (cl-loop for i below 2
+                        collect (synaxis-db-upsert-entry
+                                 `(:feed-url "https://example.com/n"
+                                             :source-id ,(format "%d" i)
+                                             :title "T" :date ,(float i))))))
+      (when-let* ((buf (get-buffer "*synaxis*"))) (kill-buffer buf))
+      (synaxis-show-entry (nth 0 ids) ids)
+      (with-current-buffer "*synaxis-show*"
+        (synaxis-show--walk +1)
+        (should (equal (nth 1 ids) synaxis-show--entry-id))))))
+
 (provide 'synaxis-show-tests)
 ;;; synaxis-show-tests.el ends here
