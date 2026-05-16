@@ -266,12 +266,14 @@ tag-face cache from the registry."
 (defun synaxis-search-show-entry ()
   "Open the entry at point in the show buffer.
 Hands the show buffer the current view's id sequence so its `n'
-and `p' can step between sibling entries."
+and `p' can step between sibling entries.  Refreshes `*synaxis*'
+afterwards so the now-read entry drops from `tag:unread'-style
+filters."
   (interactive)
   (when-let* ((id (synaxis-search-current-entry)))
     (require 'synaxis-show)
     (synaxis-show-entry id (mapcar #'car tabulated-list-entries))
-    (synaxis-search--redraw-current)))
+    (synaxis-search-refresh)))
 
 (defun synaxis-search-mark-all-read ()
   "Mark every entry currently visible in the buffer as read."
