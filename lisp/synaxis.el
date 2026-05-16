@@ -104,9 +104,13 @@ Each rule is a plist with keys:
 Rules fire on every fresh entry insert via `synaxis-new-entry-hook'.
 Run `synaxis-tag-rules-apply-all' to back-apply across the whole DB.
 
+Values with whitespace must be double-quoted so they parse as one
+token: `feed:\"PubMed Trending\"', `tag:\"slow read\"'.
+
 Example:
   (setq synaxis-tag-rules
         \\='((:filter \"feed:hackaday\" :add (\"hardware\"))
+          (:filter \"feed:\\\"PubMed Trending\\\"\" :add (\"medicine\"))
           (:filter \"feed:promo\"    :remove (\"unread\"))
           (:filter \"title:rust\"    :add (\"rust\") :remove (\"later\"))))"
   :type '(repeat (plist :options
