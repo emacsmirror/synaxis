@@ -26,6 +26,38 @@
        (when (file-directory-p dir)
          (delete-directory dir t)))))
 
+;;; Migration framework
+
+(ert-deftest synaxis-db-test-bootstrap-records-target-version ()
+  "Fresh install lands at `synaxis-db--schema-target-version'."
+  (synaxis-db-tests--with-tmp
+   (let ((db (synaxis-db--ensure-open)))
+     (should (= synaxis-db--schema-target-version
+                (caar (sqlite-select db "SELECT version FROM schema_version;")))))))
+
+(ert-deftest synaxis-db-test-bootstrap-idempotent ()
+  "Re-bootstrapping an up-to-date DB doesn't run migrations again."
+  (synaxis-db-tests--with-tmp
+   (let ((db (synaxis-db--ensure-open)))
+     ;; Run bootstrap a second time.
+     (synaxis-db--bootstrap db)
+     (should (= synaxis-db--schema-target-version
+                (caar (sqlite-select db "SELECT version FROM schema_version;")))))))
+
+(ert-deftest synaxis-db-test-migrate-advances-one-step ()
+  "A pending migration bumps version exactly to its target."
+  (synaxis-db-tests--with-tmp
+   (let* ((db (synaxis-db--ensure-open))
+          (saw 0)
+          (synaxis-db--schema-target-version 99)
+          (synaxis-db--migrations
+           `((50 . ,(lambda (_db) (setq saw 50)))
+             (51 . ,(lambda (_db) (setq saw 51))))))
+     (sqlite-execute db "UPDATE schema_version SET version = 49;")
+     (synaxis-db--migrate db 49 51)
+     (should (= 51 saw))
+     (should (= 51 (caar (sqlite-select db "SELECT version FROM schema_version;")))))))
+
 ;;; Bootstrap
 
 (ert-deftest synaxis-db-test-bootstrap-creates-schema-version ()
