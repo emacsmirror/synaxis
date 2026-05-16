@@ -324,7 +324,9 @@
    (synaxis-db-upsert-entry '(:feed-url "https://example.com/x" :source-id "1"
                                         :title "Recent Post" :date 100.0))
    (let ((c (synaxis-filter-completions)))
-     (should (member "title:Recent Post" c)))))
+     ;; Multi-word titles are emitted quoted so they round-trip
+     ;; through `synaxis-filter-parse'.
+     (should (member "title:\"Recent Post\"" c)))))
 
 (ert-deftest synaxis-filter-test-completions-respect-entry-title-limit ()
   (synaxis-filter-tests--with-tmp
@@ -340,6 +342,96 @@
                                      (> (length s) 6)))
                               c)))
      (should (= 10 (length titles))))))
+
+;;; Tokenizer (plan-09)
+
+(ert-deftest synaxis-filter-test-tokenize-bare-words ()
+  (should (equal '("a" "b" "c")
+                 (synaxis-filter--tokenize "a  b\tc"))))
+
+(ert-deftest synaxis-filter-test-tokenize-quoted-value ()
+  (should (equal '("feed:PubMed Trending")
+                 (synaxis-filter--tokenize "feed:\"PubMed Trending\""))))
+
+(ert-deftest synaxis-filter-test-tokenize-bare-quoted ()
+  (should (equal '("exact phrase")
+                 (synaxis-filter--tokenize "\"exact phrase\""))))
+
+(ert-deftest synaxis-filter-test-tokenize-mixed ()
+  (should (equal '("tag:hardware"
+                   "feed:PubMed Trending"
+                   "-tag:promo"
+                   "exact phrase")
+                 (synaxis-filter--tokenize
+                  "tag:hardware feed:\"PubMed Trending\" -tag:promo \"exact phrase\""))))
+
+(ert-deftest synaxis-filter-test-tokenize-empty-quoted-dropped ()
+  (should (equal '("a" "b")
+                 (synaxis-filter--tokenize "a \"\" b"))))
+
+(ert-deftest synaxis-filter-test-tokenize-unmatched-quote-forgiving ()
+  (should (equal '("feed:PubMed Trending")
+                 (synaxis-filter--tokenize "feed:\"PubMed Trending"))))
+
+(ert-deftest synaxis-filter-test-tokenize-escaped-quote ()
+  (should (equal '("title:He said \"hi\"")
+                 (synaxis-filter--tokenize
+                  "title:\"He said \\\"hi\\\"\""))))
+
+;;; Quoted-value parse + compile
+
+(ert-deftest synaxis-filter-test-parse-quoted-feed ()
+  (should (equal '((feed . "PubMed Trending"))
+                 (synaxis-filter-parse "feed:\"PubMed Trending\""))))
+
+(ert-deftest synaxis-filter-test-parse-quoted-not-tag ()
+  (should (equal '((not-tag . "slow read"))
+                 (synaxis-filter-parse "-tag:\"slow read\""))))
+
+(ert-deftest synaxis-filter-test-compile-quoted-feed ()
+  (let* ((tokens (synaxis-filter-parse "feed:\"PubMed Trending\""))
+         (c (synaxis-filter-compile tokens)))
+    (should (string-match-p "f\\.title LIKE \\?" (plist-get c :where)))
+    (should (equal '("%PubMed Trending%") (plist-get c :params)))))
+
+(ert-deftest synaxis-filter-test-compile-not-tag-quoted ()
+  (let* ((tokens (synaxis-filter-parse "-tag:\"slow read\""))
+         (c (synaxis-filter-compile tokens)))
+    (should (equal '("slow read") (plist-get c :params)))))
+
+(ert-deftest synaxis-filter-test-compile-bare-quoted-text ()
+  (let* ((tokens (synaxis-filter-parse "\"exact phrase\""))
+         (c (synaxis-filter-compile tokens)))
+    (should (equal '("%exact phrase%" "%exact phrase%")
+                   (plist-get c :params)))))
+
+;;; Completion quoting
+
+(ert-deftest synaxis-filter-test-quote-if-needed ()
+  (should (equal "plain" (synaxis-filter--quote-if-needed "plain")))
+  (should (equal "\"two words\""
+                 (synaxis-filter--quote-if-needed "two words"))))
+
+(ert-deftest synaxis-filter-test-prefix-each-quotes-spaced-values ()
+  (let ((out (synaxis-filter--prefix-each
+              "feed:" '("Hackaday" "PubMed Trending"))))
+    (should (member "feed:Hackaday" out))
+    (should (member "feed:\"PubMed Trending\"" out))))
+
+;;; Tag-rules end-to-end with quoted filter
+
+(ert-deftest synaxis-filter-test-tag-rule-quoted-feed-tags-entry ()
+  "A tag rule with a quoted multi-word feed title tags matching entries."
+  (synaxis-filter-tests--with-tmp
+   (require 'synaxis)
+   (synaxis-db-add-feed "https://example.com/pm" '(:title "PubMed Trending"))
+   (let ((id (synaxis-db-upsert-entry
+              '(:feed-url "https://example.com/pm" :source-id "1"
+                          :title "A study" :date 100.0))))
+     (let ((synaxis-tag-rules
+            '((:filter "feed:\"PubMed Trending\"" :add ("medicine")))))
+       (synaxis-tag-rules-apply-entry id))
+     (should (member "medicine" (synaxis-db-get-tags id))))))
 
 (provide 'synaxis-filter-tests)
 ;;; synaxis-filter-tests.el ends here
