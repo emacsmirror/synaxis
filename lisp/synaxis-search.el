@@ -172,6 +172,7 @@ so the format reflects the current window size."
 
 (keymap-popup-define synaxis-search-mode-map
   "Keymap for `synaxis-search-mode'."
+  :parent synaxis-tl-list-mode-map
   :description
   (lambda ()
     (with-current-buffer (or (get-buffer "*synaxis*") (current-buffer))
