@@ -99,12 +99,13 @@ press `g' on the list buffer and reopen to refresh.")
                 (entry (synaxis-db-get-entry id)))
           (let* ((title (or (plist-get entry :title) "(untitled)"))
                  (feed  (or (plist-get entry :feed-title) ""))
-                 (peers synaxis-show--peers)
-                 (pos   (and peers (cl-position id peers)))
-                 (idx   (and pos (format " [%d/%d]" (1+ pos) (length peers)))))
+                 (idx (or (and-let* ((peers synaxis-show--peers)
+                                     (pos (cl-position id peers)))
+                            (format " [%d/%d]" (1+ pos) (length peers)))
+                          "")))
             (format "%s%s: %s"
                     (propertize feed 'face 'font-lock-type-face)
-                    (or idx "")
+                    idx
                     (propertize title 'face 'font-lock-keyword-face)))
         "synaxis-show (no entry)")))
   :group "Navigate"
@@ -128,30 +129,10 @@ press `g' on the list buffer and reopen to refresh.")
   (when synaxis-show--entry-id
     (synaxis-show-entry synaxis-show--entry-id)))
 
-(defun synaxis-show-entry (entry-id &optional peers)
-  "Display the entry with database id ENTRY-ID.
-When PEERS is non-nil it is stored buffer-local so that `n' / `p'
-in the show buffer can navigate between sibling entries."
-  (let ((entry (synaxis-db-get-entry entry-id)))
-    (unless entry
-      (user-error "No entry with id %s" entry-id))
-    (let ((buf (get-buffer-create "*synaxis-show*")))
-      (with-current-buffer buf
-        (unless (derived-mode-p 'synaxis-show-mode)
-          (synaxis-show-mode))
-        (let ((inhibit-read-only t))
-          (erase-buffer)
-          (funcall synaxis-show-display-function entry)
-          (goto-char (point-min)))
-        (setq synaxis-show--entry-id entry-id)
-        (when peers (setq synaxis-show--peers peers)))
-      (synaxis-db-remove-tag entry-id "unread")
-      (pop-to-buffer buf))))
-
-(defun synaxis-show-entry-plist (entry)
-  "Display ENTRY plist in `*synaxis-show*' without DB lookup or side effects.
-Used by scrape-test and other preview paths that have an entry
-plist in hand but no DB row to refer to."
+(defun synaxis-show--render-into-buffer (entry entry-id peers)
+  "Render ENTRY into `*synaxis-show*' and seed its buffer-local state.
+ENTRY-ID and PEERS are stored as-is (either may be nil for preview
+paths with no DB row).  Returns the buffer."
   (let ((buf (get-buffer-create "*synaxis-show*")))
     (with-current-buffer buf
       (unless (derived-mode-p 'synaxis-show-mode)
@@ -160,9 +141,29 @@ plist in hand but no DB row to refer to."
         (erase-buffer)
         (funcall synaxis-show-display-function entry)
         (goto-char (point-min)))
-      (setq synaxis-show--entry-id nil)
-      (setq synaxis-show--peers nil))
+      (setq synaxis-show--entry-id entry-id
+            synaxis-show--peers peers))
+    buf))
+
+(defun synaxis-show-entry (entry-id &optional peers)
+  "Display the entry with database id ENTRY-ID.
+When PEERS is non-nil it is stored buffer-local so that `n' / `p'
+in the show buffer can navigate between sibling entries; otherwise
+any peers already recorded in the show buffer are preserved."
+  (let* ((entry (or (synaxis-db-get-entry entry-id)
+                    (user-error "No entry with id %s" entry-id)))
+         (existing (and-let* ((buf (get-buffer "*synaxis-show*")))
+                     (buffer-local-value 'synaxis-show--peers buf)))
+         (buf (synaxis-show--render-into-buffer
+               entry entry-id (or peers existing))))
+    (synaxis-db-remove-tag entry-id "unread")
     (pop-to-buffer buf)))
+
+(defun synaxis-show-entry-plist (entry)
+  "Display ENTRY plist in `*synaxis-show*' without DB lookup or side effects.
+Used by scrape-test and other preview paths that have an entry
+plist in hand but no DB row to refer to."
+  (pop-to-buffer (synaxis-show--render-into-buffer entry nil nil)))
 
 (defun synaxis-show--sync-list (id)
   "Refresh `*synaxis*' and move point to the row whose id is ID.
