@@ -60,7 +60,7 @@ entries, auto-save) honours this flag.  Defined here because
 (defvar synaxis-db--connection nil
   "Cached SQLite connection, or nil if not yet opened.")
 
-(defconst synaxis-db--schema-target-version 2
+(defconst synaxis-db--schema-target-version 3
   "Schema version the bootstrapper migrates databases up to.
 Bump this and append a new entry to `synaxis-db--migrations' when
 adding a schema change.")
@@ -143,9 +143,26 @@ marks `unread' as a system tag."
   (sqlite-execute db "ALTER TABLE entry_tags_new RENAME TO entry_tags;")
   (sqlite-execute db "CREATE INDEX entry_tags_tag ON entry_tags (tag);"))
 
+(defun synaxis-db--migration-2-to-3 (db)
+  "Add the `scrape_rules' table for v0.2 synthetic feeds.
+Was specified in DESIGN.md but missing from the v1 baseline."
+  (sqlite-execute
+   db
+   "CREATE TABLE IF NOT EXISTS scrape_rules (
+      feed_url         TEXT PRIMARY KEY REFERENCES feeds(url) ON DELETE CASCADE,
+      item_selector    TEXT NOT NULL,
+      title_selector   TEXT,
+      link_selector    TEXT,
+      date_selector    TEXT,
+      date_format      TEXT,
+      content_selector TEXT,
+      meta             TEXT
+    ) STRICT;"))
+
 (defvar synaxis-db--migrations
   '((1 . synaxis-db--migration-0-to-1)
-    (2 . synaxis-db--migration-1-to-2))
+    (2 . synaxis-db--migration-1-to-2)
+    (3 . synaxis-db--migration-2-to-3))
   "Alist of (TARGET-VERSION . FUNCTION).
 FUNCTION takes the open DB and moves the schema from TARGET-VERSION-1
 to TARGET-VERSION.  Each call is wrapped in its own transaction by
@@ -552,6 +569,81 @@ When NEW is new, FK ON UPDATE CASCADE propagates the rename."
   (let ((db (synaxis-db--ensure-open)))
     (sqlite-execute db "UPDATE tags SET description = ? WHERE tag = ?;"
                     (list description tag))))
+
+;;; Scrape rules
+
+(defun synaxis-db--scrape-rule-row (row)
+  "Convert a `scrape_rules' ROW into a plist."
+  (pcase-let ((`(,_feed-url ,item ,title ,link ,date ,date-fmt ,content ,meta) row))
+    (list :url-selector     item
+          :title-cleanup    title
+          :url-pattern      link
+          :date-selector    date
+          :date-format      date-fmt
+          :content-selector content
+          :meta             (synaxis-db--decode-meta meta))))
+
+(defun synaxis-db-add-scrape-rule (url plist)
+  "Insert or replace scrape rules for feed URL from PLIST.
+Recognised keys: `:url-selector', `:url-pattern',
+`:content-selector', `:content-cleanup', `:title-cleanup',
+`:date-selector', `:date-format', `:limit', `:meta'."
+  (let* ((db (synaxis-db--ensure-open))
+         (meta (synaxis-db--encode-meta
+                (list :content-cleanup (plist-get plist :content-cleanup)
+                      :limit           (plist-get plist :limit)
+                      :extra           (plist-get plist :meta)))))
+    (sqlite-execute
+     db
+     "INSERT INTO scrape_rules (feed_url, item_selector, title_selector,
+                                 link_selector, date_selector, date_format,
+                                 content_selector, meta)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(feed_url) DO UPDATE SET
+        item_selector    = excluded.item_selector,
+        title_selector   = excluded.title_selector,
+        link_selector    = excluded.link_selector,
+        date_selector    = excluded.date_selector,
+        date_format      = excluded.date_format,
+        content_selector = excluded.content_selector,
+        meta             = excluded.meta;"
+     (list url
+           (plist-get plist :url-selector)
+           (plist-get plist :title-cleanup)
+           (plist-get plist :url-pattern)
+           (plist-get plist :date-selector)
+           (plist-get plist :date-format)
+           (plist-get plist :content-selector)
+           meta))))
+
+(defun synaxis-db-get-scrape-rule (url)
+  "Return scrape-rule plist for feed URL, or nil."
+  (let* ((db (synaxis-db--ensure-open))
+         (row (car (sqlite-select
+                    db
+                    "SELECT feed_url, item_selector, title_selector,
+                            link_selector, date_selector, date_format,
+                            content_selector, meta
+                     FROM scrape_rules WHERE feed_url = ?;"
+                    (list url)))))
+    (when row
+      (let* ((base (synaxis-db--scrape-rule-row row))
+             (extra (plist-get base :meta)))
+        ;; Spread the extras-meta plist back onto the top level.
+        (setq base (plist-put base :content-cleanup
+                              (plist-get extra :content-cleanup)))
+        (setq base (plist-put base :limit (plist-get extra :limit)))
+        (setq base (plist-put base :meta (plist-get extra :extra)))
+        base))))
+
+(defun synaxis-db-list-scrape-rules ()
+  "Return an alist of (URL . PLIST) for every scrape rule."
+  (let ((db (synaxis-db--ensure-open)))
+    (mapcar
+     (lambda (row)
+       (cons (car row)
+             (synaxis-db-get-scrape-rule (car row))))
+     (sqlite-select db "SELECT feed_url FROM scrape_rules;"))))
 
 (defun synaxis-db-get-tags (entry-id)
   "Return the list of tag strings on ENTRY-ID."
