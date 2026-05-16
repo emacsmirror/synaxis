@@ -346,6 +346,18 @@ caps the result count.  Results are ordered by date descending."
      "DELETE FROM entry_tags WHERE entry_id = ? AND tag = ?;"
      (list entry-id tag))))
 
+(defun synaxis-db-bulk-add-tag (entry-ids tag)
+  "Add TAG to each id in ENTRY-IDS in a single transaction.
+No-op when ENTRY-IDS is nil.  Idempotent via INSERT OR IGNORE."
+  (when entry-ids
+    (let ((db (synaxis-db--ensure-open)))
+      (synaxis-db--with-transaction db
+        (dolist (id entry-ids)
+          (sqlite-execute
+           db
+           "INSERT OR IGNORE INTO entry_tags (entry_id, tag) VALUES (?, ?);"
+           (list id tag)))))))
+
 (defun synaxis-db-bulk-remove-tag (entry-ids tag)
   "Remove TAG from each id in ENTRY-IDS in a single transaction.
 No-op when ENTRY-IDS is nil."
