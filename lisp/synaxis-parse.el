@@ -294,7 +294,7 @@ content do not collide."
           (json-parse-buffer :object-type 'plist :array-type 'list))))
       (_
        (let ((dom (libxml-parse-xml-region (point-min) (point-max))))
-         (pcase type
+         (pcase-exhaustive type
            ('atom (synaxis-parse--from-atom dom))
            ('rss  (synaxis-parse--from-rss dom))
            ('rss1 (synaxis-parse--from-rss1 dom))))))))
