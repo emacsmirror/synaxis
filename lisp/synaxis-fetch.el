@@ -223,9 +223,10 @@ HEADERS' ETag and Last-Modified are persisted on success.
 Tags listed in the feed's `meta.autotags' are applied to each
 fresh insert in addition to `unread'."
   (condition-case _err
-      (let* ((parsed   (synaxis-parse-string
-                        (synaxis-fetch--body-as-string body)))
-             (feed     (synaxis-db-get-feed url))
+      (let* ((parsed (synaxis-parse-string
+                      (synaxis-fetch--body-as-string body)
+                      url))
+             (feed (synaxis-db-get-feed url))
              (autotags (append (plist-get (plist-get feed :meta) :autotags)
                                nil)))
         (synaxis-db-set-feed-title-if-empty url (plist-get parsed :title))
