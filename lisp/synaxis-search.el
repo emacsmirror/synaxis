@@ -34,6 +34,7 @@
 (declare-function synaxis-add-feed "synaxis" (url &optional title))
 (declare-function synaxis-remove-feed "synaxis" (url))
 (declare-function synaxis-edit-feed "synaxis-edit" (&optional url))
+(declare-function synaxis-tag-rules-apply-all "synaxis" ())
 
 (defvar crm-separator)
 
@@ -192,6 +193,7 @@ so the format reflects the current window size."
   "r" ("Toggle read" synaxis-search-toggle-read :stay-open t)
   "R" ("Mark all read" synaxis-search-mark-all-read)
   "t" ("Edit tags" synaxis-search-edit-tags :stay-open t)
+  ";" ("Apply tag rules" synaxis-tag-rules-apply-all)
   :group "Feeds"
   "A" ("Add feed" synaxis-add-feed)
   "D" ("Remove feed" synaxis-remove-feed)
