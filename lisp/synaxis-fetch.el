@@ -39,6 +39,18 @@ Bound around the `url-queue-retrieve' call as
   :type 'integer
   :group 'synaxis)
 
+(defcustom synaxis-http-request-headers
+  '(("Accept-Language" . "en-US,en;q=0.9")
+    ("Accept" . "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
+    ("User-Agent" . "Mozilla/5.0 (X11; Linux x86_64; rv:128.0) Gecko/20100101 Firefox/128.0"))
+  "HTTP headers sent by feed fetch and scrape requests.
+Bound as `url-request-extra-headers' around each call.  The default
+User-Agent impersonates a recent Firefox so sites with bot filters
+do not 403; adjust `Accept-Language' to bias content to your
+locale (e.g. \"el-GR,en;q=0.5\")."
+  :type '(alist :key-type string :value-type string)
+  :group 'synaxis)
+
 ;;; Hooks
 
 (defvar synaxis-new-entry-parse-hook nil
@@ -187,7 +199,8 @@ its own DB, not in url-cache).  We still record the response's ETag
 and Last-Modified for a future, custom HTTP path."
   (unless (synaxis-fetch--in-flight-p url)
     (let ((url-queue-parallel-processes synaxis-fetch-max-parallel)
-          (url-queue-timeout synaxis-fetch-timeout))
+          (url-queue-timeout             synaxis-fetch-timeout)
+          (url-request-extra-headers     synaxis-http-request-headers))
       (puthash url t synaxis-fetch--in-flight)
       (url-queue-retrieve url #'synaxis-fetch--callback (list url) t t))))
 
