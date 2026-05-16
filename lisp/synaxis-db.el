@@ -198,6 +198,24 @@ every pending entry in `synaxis-db--migrations' in order."
     (ignore-errors (sqlite-close synaxis-db--connection))
     (setq synaxis-db--connection nil)))
 
+;;; Parameter-limit detection
+
+(defvar synaxis-db--max-vars nil
+  "Cached SQLITE_MAX_VARIABLE_NUMBER for batch operations.")
+
+(defun synaxis-db--max-variable-number (db)
+  "Return SQLITE_MAX_VARIABLE_NUMBER for DB, cached after first call.
+Falls back to 999 (the SQLite pre-3.32 default) if the compile
+options can't be parsed."
+  (or synaxis-db--max-vars
+      (setq synaxis-db--max-vars
+            (let ((opts (sqlite-select db "PRAGMA compile_options;")))
+              (cl-loop for (opt) in opts
+                       when (string-match
+                             "MAX_VARIABLE_NUMBER=\\([0-9]+\\)" opt)
+                       return (string-to-number (match-string 1 opt))
+                       finally return 999)))))
+
 ;;; JSON helpers
 
 (defun synaxis-db--encode-meta (plist)
@@ -421,31 +439,54 @@ caps the result count.  Results are ordered by date descending."
 
 (defun synaxis-db-bulk-add-tag (entry-ids tag)
   "Add TAG to each id in ENTRY-IDS in a single transaction.
+Uses multi-row VALUES chunked by the SQLite parameter limit.
 No-op when ENTRY-IDS is nil.  Idempotent via INSERT OR IGNORE.
 Auto-registers TAG in `tags'."
   (when entry-ids
-    (let ((db (synaxis-db--ensure-open)))
+    (let* ((db (synaxis-db--ensure-open))
+           (max-vars (synaxis-db--max-variable-number db))
+           (chunk-size (max 1 (/ max-vars 2)))
+           (offset 0)
+           (total (length entry-ids)))
       (synaxis-db--with-transaction db
         (sqlite-execute db
                         "INSERT OR IGNORE INTO tags (tag) VALUES (?);"
                         (list tag))
-        (dolist (id entry-ids)
-          (sqlite-execute
-           db
-           "INSERT OR IGNORE INTO entry_tags (entry_id, tag) VALUES (?, ?);"
-           (list id tag)))))))
+        (while (< offset total)
+          (let* ((end (min total (+ offset chunk-size)))
+                 (chunk (cl-subseq entry-ids offset end))
+                 (placeholders (mapconcat (lambda (_) "(?, ?)") chunk ", "))
+                 (params (cl-loop for id in chunk append (list id tag))))
+            (sqlite-execute
+             db
+             (concat "INSERT OR IGNORE INTO entry_tags (entry_id, tag) VALUES "
+                     placeholders ";")
+             params)
+            (setq offset end)))))))
 
 (defun synaxis-db-bulk-remove-tag (entry-ids tag)
   "Remove TAG from each id in ENTRY-IDS in a single transaction.
+Uses chunked DELETE ... IN (?, ?, ...) statements.
 No-op when ENTRY-IDS is nil."
   (when entry-ids
-    (let ((db (synaxis-db--ensure-open)))
+    (let* ((db (synaxis-db--ensure-open))
+           (max-vars (synaxis-db--max-variable-number db))
+           ;; One slot reserved for TAG, the rest are ids.
+           (chunk-size (max 1 (1- max-vars)))
+           (offset 0)
+           (total (length entry-ids)))
       (synaxis-db--with-transaction db
-        (dolist (id entry-ids)
-          (sqlite-execute
-           db
-           "DELETE FROM entry_tags WHERE entry_id = ? AND tag = ?;"
-           (list id tag)))))))
+        (while (< offset total)
+          (let* ((end (min total (+ offset chunk-size)))
+                 (chunk (cl-subseq entry-ids offset end))
+                 (placeholders (mapconcat (lambda (_) "?") chunk ", "))
+                 (params (cons tag chunk)))
+            (sqlite-execute
+             db
+             (concat "DELETE FROM entry_tags WHERE tag = ?
+                      AND entry_id IN (" placeholders ");")
+             params)
+            (setq offset end)))))))
 
 (defun synaxis-db-get-tags (entry-id)
   "Return the list of tag strings on ENTRY-ID."
