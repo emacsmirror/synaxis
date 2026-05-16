@@ -38,6 +38,7 @@
 (require 'cl-lib)
 (require 'dom)
 (require 'parse-time)
+(require 'url-parse)
 
 ;;; Date helpers
 
@@ -66,6 +67,26 @@ failure, so callers never need to handle a nil date."
   (or (synaxis-parse--decode-iso8601 s)
       (synaxis-parse--decode-rfc822 s)
       (float-time)))
+
+;;; URL resolution
+
+(defun synaxis-parse--resolve-url (base path)
+  "Resolve PATH against BASE URL into an absolute URL string.
+Handles absolute, page-relative, root-relative, protocol-relative,
+and fragment-only paths.  Returns nil for nil or empty PATH.  When
+BASE is nil, returns PATH unchanged (callers can fold across
+optional xml:base chains)."
+  (cond
+   ((or (null path) (string-empty-p path)) nil)
+   ((string-prefix-p "http://"  path) path)
+   ((string-prefix-p "https://" path) path)
+   ((null base) path)
+   ((string-prefix-p "//" path)
+    (let ((scheme (url-type (url-generic-parse-url base))))
+      (concat scheme ":" path)))
+   ((string-prefix-p "#" path)
+    (concat (replace-regexp-in-string "#.*\\'" "" base) path))
+   (t (url-expand-file-name path base))))
 
 ;;; DOM helpers
 

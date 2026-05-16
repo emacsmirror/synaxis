@@ -32,6 +32,7 @@
 (require 'url-parse)
 (require 'parse-time)
 (require 'url-queue)
+(require 'synaxis-parse)
 
 (defvar synaxis-http-request-headers)
 
@@ -182,20 +183,8 @@ COMBINATOR is `descendant', `child', or nil for the last token."
 
 ;;; URL resolution
 
-(defun synaxis-scrape--resolve-url (base path)
-  "Resolve PATH against BASE URL into an absolute URL string.
-Handles absolute, page-relative, root-relative, protocol-relative,
-and fragment-only paths.  Returns nil for nil or empty PATH."
-  (cond
-   ((or (null path) (string-empty-p path)) nil)
-   ((string-prefix-p "http://"  path) path)
-   ((string-prefix-p "https://" path) path)
-   ((string-prefix-p "//" path)
-    (let ((scheme (url-type (url-generic-parse-url base))))
-      (concat scheme ":" path)))
-   ((string-prefix-p "#" path)
-    (concat (replace-regexp-in-string "#.*\\'" "" base) path))
-   (t (url-expand-file-name path base))))
+(defalias 'synaxis-scrape--resolve-url #'synaxis-parse--resolve-url
+  "Alias kept so existing scrape callers and tests need no rename.")
 
 ;;; HTML decoding
 
@@ -529,7 +518,7 @@ the source instead of the DB."
     (synaxis-show-entry-plist entry)))
 
 (define-key synaxis-scrape-test-mode-map (kbd "RET")
-  #'synaxis-scrape-test-show)
+	    #'synaxis-scrape-test-show)
 
 (defun synaxis-scrape--render-test-buffer (url entries)
   "Pop the scrape-test buffer with ENTRIES extracted from URL."
