@@ -25,6 +25,8 @@
 (require 'synaxis-db)
 (require 'synaxis-parse)
 
+(declare-function synaxis-scrape-feed "synaxis-scrape" (url))
+
 ;;; Customisation
 
 (defcustom synaxis-fetch-max-parallel 4
@@ -198,11 +200,22 @@ url-cache directory has not been populated (synaxis stores ETags in
 its own DB, not in url-cache).  We still record the response's ETag
 and Last-Modified for a future, custom HTTP path."
   (unless (synaxis-fetch--in-flight-p url)
-    (let ((url-queue-parallel-processes synaxis-fetch-max-parallel)
-          (url-queue-timeout             synaxis-fetch-timeout)
-          (url-request-extra-headers     synaxis-http-request-headers))
-      (puthash url t synaxis-fetch--in-flight)
-      (url-queue-retrieve url #'synaxis-fetch--callback (list url) t t))))
+    (let* ((feed (synaxis-db-get-feed url))
+           (type (and feed (plist-get feed :type))))
+      (cond
+       ((equal type "scrape")
+        (require 'synaxis-scrape)
+        (condition-case err
+            (synaxis-scrape-feed url)
+          (error
+           (message "synaxis: scrape failed for %s: %S" url err)
+           (synaxis-fetch--record-failure url))))
+       (t
+        (let ((url-queue-parallel-processes synaxis-fetch-max-parallel)
+              (url-queue-timeout             synaxis-fetch-timeout)
+              (url-request-extra-headers     synaxis-http-request-headers))
+          (puthash url t synaxis-fetch--in-flight)
+          (url-queue-retrieve url #'synaxis-fetch--callback (list url) t t)))))))
 
 (defun synaxis-fetch--callback (_status url)
   "Callback for `url-queue-retrieve' bound to URL."

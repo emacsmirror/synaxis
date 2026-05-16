@@ -415,5 +415,57 @@ CALLBACK receives the augmented entry list.  When RULES lacks
         (dolist (e entries)
           (synaxis-scrape--queue-article e rules tracker callback))))))
 
+;;; Top-level orchestration
+
+(declare-function synaxis-db--ensure-open "synaxis-db" ())
+(declare-function synaxis-db-add-feed "synaxis-db" (url &optional plist))
+(declare-function synaxis-db-find-entry "synaxis-db" (feed-url source-id))
+(declare-function synaxis-db-upsert-entry "synaxis-db" (plist))
+(declare-function synaxis-db-add-tag "synaxis-db" (entry-id tag))
+(declare-function synaxis-db-set-feed-cache-headers "synaxis-db" (url plist))
+(declare-function synaxis-db-set-feed-title-if-empty "synaxis-db" (url title))
+(declare-function synaxis-db-get-scrape-rule "synaxis-db" (url))
+(declare-function synaxis-db-get-feed "synaxis-db" (url))
+
+(defvar synaxis-new-entry-hook)
+
+(defun synaxis-scrape--fetch-html (url)
+  "Synchronously fetch URL and return its decoded HTML body."
+  (let* ((url-request-extra-headers synaxis-http-request-headers)
+         (buf (url-retrieve-synchronously url t t)))
+    (unwind-protect (synaxis-scrape--decode-html buf)
+      (when (buffer-live-p buf) (kill-buffer buf)))))
+
+(defun synaxis-scrape--save-entries (url entries)
+  "Upsert ENTRIES under feed URL; fire `synaxis-new-entry-hook' for inserts."
+  (let* ((feed (synaxis-db-get-feed url))
+         (autotags (append (plist-get (plist-get feed :meta) :autotags) nil)))
+    (dolist (raw entries)
+      (let* ((entry (plist-put raw :feed-url url))
+             (source-id (plist-get entry :source-id))
+             (existing  (synaxis-db-find-entry url source-id))
+             (id        (synaxis-db-upsert-entry entry)))
+        (unless existing
+          (synaxis-db-add-tag id "unread")
+          (dolist (tag autotags) (synaxis-db-add-tag id tag))
+          (run-hook-with-args 'synaxis-new-entry-hook id))))))
+
+(defun synaxis-scrape-feed (url)
+  "Run the scrape pipeline for URL: fetch + extract + (optional) expand + save.
+Routed to from `synaxis-fetch-feed' when the feed's type is `scrape'."
+  (let ((rules (synaxis-db-get-scrape-rule url)))
+    (unless rules
+      (user-error "No scrape rule for %s" url))
+    (let* ((html (synaxis-scrape--fetch-html url))
+           (entries (synaxis-scrape--extract html url rules)))
+      (synaxis-db-set-feed-title-if-empty
+       url (synaxis-scrape--page-title html rules))
+      (synaxis-scrape--expand-content
+       entries rules
+       (lambda (final)
+         (synaxis-scrape--save-entries url final)
+         (synaxis-db-set-feed-cache-headers
+          url (list :last-fetched (float-time) :failures 0)))))))
+
 (provide 'synaxis-scrape)
 ;;; synaxis-scrape.el ends here
