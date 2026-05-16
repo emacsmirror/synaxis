@@ -243,6 +243,37 @@
      (let ((tags (sort (synaxis-db-get-tags id) #'string<)))
        (should (equal tags '("starred" "unread")))))))
 
+(ert-deftest synaxis-db-test-bulk-add-tag ()
+  "Bulk-add-tag adds TAG only to the listed ids."
+  (synaxis-db-tests--with-tmp
+   (synaxis-db-add-feed "https://example.com/a")
+   (let ((ids (cl-loop for i below 5
+                       collect (synaxis-db-upsert-entry
+                                `(:feed-url "https://example.com/a"
+                                            :source-id ,(format "%d" i)
+                                            :title "T" :date ,(float i))))))
+     (synaxis-db-bulk-add-tag (cl-subseq ids 0 3) "foo")
+     (dolist (id (cl-subseq ids 0 3))
+       (should (member "foo" (synaxis-db-get-tags id))))
+     (dolist (id (cl-subseq ids 3))
+       (should-not (member "foo" (synaxis-db-get-tags id)))))))
+
+(ert-deftest synaxis-db-test-bulk-add-tag-idempotent ()
+  "Adding the same tag twice via bulk yields no duplicates."
+  (synaxis-db-tests--with-tmp
+   (synaxis-db-add-feed "https://example.com/i")
+   (let ((id (synaxis-db-upsert-entry
+              '(:feed-url "https://example.com/i" :source-id "1"
+                          :title "T" :date 1.0))))
+     (synaxis-db-add-tag id "foo")
+     (synaxis-db-bulk-add-tag (list id) "foo")
+     (should (equal '("foo") (synaxis-db-get-tags id))))))
+
+(ert-deftest synaxis-db-test-bulk-add-tag-empty-ids-noop ()
+  "Empty ENTRY-IDS is a silent no-op."
+  (synaxis-db-tests--with-tmp
+   (should-not (synaxis-db-bulk-add-tag nil "foo"))))
+
 (ert-deftest synaxis-db-test-bulk-remove-tag ()
   "Bulk-remove-tag clears TAG only from the listed ids."
   (synaxis-db-tests--with-tmp
