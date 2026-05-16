@@ -307,6 +307,29 @@ PLIST may contain `:title', `:type', `:meta'."
              (concat "SELECT " synaxis-db--feed-columns
                      " FROM feeds ORDER BY title COLLATE NOCASE ASC, url ASC;")))))
 
+(defun synaxis-db-set-feed-title (url title)
+  "Force-set TITLE on feed URL.  Nil clears the title."
+  (let ((db (synaxis-db--ensure-open)))
+    (sqlite-execute db "UPDATE feeds SET title = ? WHERE url = ?;"
+                    (list title url))))
+
+(defun synaxis-db-set-feed-autotags (url tags)
+  "Replace `feeds.meta.autotags' on URL with TAGS list.
+Preserves other keys inside `meta'."
+  (let* ((feed (synaxis-db-get-feed url))
+         (meta (or (plist-get feed :meta) '())))
+    (setq meta (plist-put meta :autotags (if tags (vconcat tags) [])))
+    (let ((db (synaxis-db--ensure-open)))
+      (sqlite-execute db "UPDATE feeds SET meta = ? WHERE url = ?;"
+                      (list (synaxis-db--encode-meta meta) url)))))
+
+(defun synaxis-db-update-scrape-rule-field (url key value)
+  "Set KEY to VALUE in the scrape rule for URL; preserves other keys."
+  (let ((rule (synaxis-db-get-scrape-rule url)))
+    (unless rule
+      (user-error "No scrape rule for %s" url))
+    (synaxis-db-add-scrape-rule url (plist-put rule key value))))
+
 (defun synaxis-db-set-feed-title-if-empty (url title)
   "Set feed URL's title to TITLE only if it is currently NULL or empty.
 Used to back-fill the title from a parsed feed without clobbering
