@@ -467,5 +467,76 @@ Routed to from `synaxis-fetch-feed' when the feed's type is `scrape'."
          (synaxis-db-set-feed-cache-headers
           url (list :last-fetched (float-time) :failures 0)))))))
 
+;;; Dry-run test command
+
+(defvar synaxis-scrape-test--buffer-name "*synaxis-scrape-test*"
+  "Buffer name used by `synaxis-scrape-test'.")
+
+(defun synaxis-scrape--test-buffer-format ()
+  "Return `tabulated-list-format' for the scrape-test buffer."
+  (let ((w (window-width)))
+    (vector (list "Date" 10 t)
+            (list "Title" (max 30 (truncate (* w 0.4))) t)
+            (list "Link"  (max 30 (truncate (* w 0.5))) t))))
+
+(defun synaxis-scrape--test-row (entry)
+  "Build a tabulated-list row from ENTRY."
+  (list (plist-get entry :link)
+        (vector (format-time-string
+                 "%Y-%m-%d"
+                 (seconds-to-time (or (plist-get entry :date) 0)))
+                (or (plist-get entry :title) "")
+                (or (plist-get entry :link) ""))))
+
+(define-derived-mode synaxis-scrape-test-mode tabulated-list-mode "Synaxis-Test"
+  "Read-only mode for previewing scrape rules without saving."
+  (setq tabulated-list-padding 1)
+  (setq-local truncate-lines t))
+
+(defun synaxis-scrape--render-test-buffer (url entries)
+  "Pop the scrape-test buffer with ENTRIES extracted from URL."
+  (let ((buf (get-buffer-create synaxis-scrape-test--buffer-name)))
+    (with-current-buffer buf
+      (synaxis-scrape-test-mode)
+      (setq tabulated-list-format (synaxis-scrape--test-buffer-format))
+      (tabulated-list-init-header)
+      (setq tabulated-list-entries (mapcar #'synaxis-scrape--test-row entries))
+      (setq-local mode-line-buffer-identification
+                  (list (format "synaxis test  [%d items from %s]"
+                                (length entries) url)))
+      (tabulated-list-print))
+    (pop-to-buffer buf)))
+
+;;;###autoload
+(defun synaxis-scrape-test (url &rest rules)
+  "Preview scrape RULES against URL without saving.
+Synchronous: fetches the page, applies rules, optionally expands
+per-article content (capped at 5 items for test mode), and pops
+`*synaxis-scrape-test*' with the result."
+  (interactive
+   (list (read-string "Test URL: ")
+         :url-selector (read-string "URL selector: ")))
+  (let* ((rules (plist-put rules :limit (min 5 (or (plist-get rules :limit) 5))))
+         (html (synaxis-scrape--fetch-html url))
+         (entries (synaxis-scrape--extract html url rules))
+         (expanded (synaxis-scrape--expand-sync-test entries rules)))
+    (synaxis-scrape--render-test-buffer url expanded)))
+
+(defun synaxis-scrape--expand-sync-test (entries rules)
+  "Synchronously expand per-article content for test mode.
+Returns ENTRIES with `:content' filled when `:content-selector' is set."
+  (if (not (plist-get rules :content-selector))
+      entries
+    (mapcar
+     (lambda (e)
+       (condition-case nil
+           (let* ((buf (url-retrieve-synchronously
+                        (plist-get e :link) t t))
+                  (content (synaxis-scrape--apply-content buf rules)))
+             (when (buffer-live-p buf) (kill-buffer buf))
+             (if content (plist-put e :content content) e))
+         (error e)))
+     entries)))
+
 (provide 'synaxis-scrape)
 ;;; synaxis-scrape.el ends here
