@@ -29,6 +29,8 @@
 
 (require 'cl-lib)
 (require 'dom)
+(require 'url-parse)
+(require 'parse-time)
 
 ;;; Selector AST
 ;;
@@ -166,6 +168,90 @@ COMBINATOR is `descendant', `child', or nil for the last token."
   (let ((ast (synaxis-scrape--parse-selector selector))
         (all (synaxis-scrape--all-nodes dom)))
     (synaxis-scrape--match-from ast all)))
+
+;;; URL resolution
+
+(defun synaxis-scrape--resolve-url (base path)
+  "Resolve PATH against BASE URL into an absolute URL string.
+Handles absolute, page-relative, root-relative, protocol-relative,
+and fragment-only paths.  Returns nil for nil or empty PATH."
+  (cond
+   ((or (null path) (string-empty-p path)) nil)
+   ((string-prefix-p "http://"  path) path)
+   ((string-prefix-p "https://" path) path)
+   ((string-prefix-p "//" path)
+    (let ((scheme (url-type (url-generic-parse-url base))))
+      (concat scheme ":" path)))
+   ((string-prefix-p "#" path)
+    (concat (replace-regexp-in-string "#.*\\'" "" base) path))
+   (t (url-expand-file-name path base))))
+
+;;; HTML decoding
+
+(defun synaxis-scrape--decode-html (buffer)
+  "Return the decoded HTML body of BUFFER (response from `url-retrieve').
+Strips HTTP headers if present, decodes as UTF-8 fallback."
+  (with-current-buffer buffer
+    (save-excursion
+      (goto-char (point-min))
+      (let ((body-start
+             (if (re-search-forward "\r?\n\r?\n" nil t)
+                 (match-end 0)
+               (point-min))))
+        (let ((body (buffer-substring-no-properties body-start (point-max))))
+          (if (multibyte-string-p body)
+              body
+            (decode-coding-string body 'utf-8)))))))
+
+;;; Date extraction
+
+(defun synaxis-scrape--parse-time-loose (s)
+  "Best-effort date parse on S, returning float-time or nil."
+  (and (stringp s) (not (string-empty-p s))
+       (condition-case nil
+           (let ((decoded (parse-time-string s)))
+             (and (decoded-time-year decoded)
+                  (float-time (encode-time decoded))))
+         (error nil))))
+
+(defun synaxis-scrape--node-date (node)
+  "Return float-time from NODE's `datetime' attribute or text content."
+  (or (synaxis-scrape--parse-time-loose (dom-attr node 'datetime))
+      (synaxis-scrape--parse-time-loose
+       (string-trim (or (and node (mapconcat
+                                   (lambda (c) (if (stringp c) c ""))
+                                   (dom-children node) ""))
+                        "")))))
+
+(defun synaxis-scrape--extract-date (dom selector)
+  "Extract a float-time from DOM using SELECTOR string.
+SELECTOR may be nil; returns nil if no match."
+  (and selector
+       (let ((nodes (synaxis-scrape--query selector dom)))
+         (cl-loop for n in nodes
+                  for d = (synaxis-scrape--node-date n)
+                  when d return d))))
+
+;;; Content cleanup
+
+(defun synaxis-scrape--cleanup-content (node cleanup-selector)
+  "Remove from NODE every child matching CLEANUP-SELECTOR.
+CLEANUP-SELECTOR may be nil (no-op).  Mutates NODE in place;
+returns NODE for chaining."
+  (when (and node cleanup-selector)
+    (dolist (victim (synaxis-scrape--query cleanup-selector node))
+      (dom-remove-node node victim)))
+  node)
+
+;;; Title cleanup
+
+(defun synaxis-scrape--strip-title (title cleanup)
+  "Remove CLEANUP substring from TITLE.  Trims the result.
+Either argument may be nil."
+  (let ((s (or title "")))
+    (when (and cleanup (not (string-empty-p cleanup)))
+      (setq s (replace-regexp-in-string (regexp-quote cleanup) "" s)))
+    (string-trim s)))
 
 (provide 'synaxis-scrape)
 ;;; synaxis-scrape.el ends here
