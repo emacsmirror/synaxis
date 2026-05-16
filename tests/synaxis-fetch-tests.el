@@ -266,5 +266,29 @@
        (synaxis-fetch-feed "https://example.com/x"))
      (should (equal synaxis-http-request-headers captured)))))
 
+(ert-deftest synaxis-fetch-test-dispatch-rss-uses-url-queue ()
+  (synaxis-fetch-tests--with-tmp
+   (let (queue-fired scrape-fired)
+     (synaxis-db-add-feed "https://example.com/rss" '(:type "rss"))
+     (cl-letf (((symbol-function 'url-queue-retrieve)
+                (lambda (&rest _) (setq queue-fired t)))
+               ((symbol-function 'synaxis-scrape-feed)
+                (lambda (_url) (setq scrape-fired t))))
+       (synaxis-fetch-feed "https://example.com/rss"))
+     (should queue-fired)
+     (should-not scrape-fired))))
+
+(ert-deftest synaxis-fetch-test-dispatch-scrape-uses-scrape-feed ()
+  (synaxis-fetch-tests--with-tmp
+   (let (queue-fired scrape-fired)
+     (synaxis-db-add-feed "https://example.com/sc" '(:type "scrape"))
+     (cl-letf (((symbol-function 'url-queue-retrieve)
+                (lambda (&rest _) (setq queue-fired t)))
+               ((symbol-function 'synaxis-scrape-feed)
+                (lambda (_url) (setq scrape-fired t))))
+       (synaxis-fetch-feed "https://example.com/sc"))
+     (should scrape-fired)
+     (should-not queue-fired))))
+
 (provide 'synaxis-fetch-tests)
 ;;; synaxis-fetch-tests.el ends here
