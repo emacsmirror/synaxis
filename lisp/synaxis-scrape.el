@@ -217,12 +217,25 @@ Strips HTTP headers if present, decodes as UTF-8 fallback."
 ;;; Date extraction
 
 (defun synaxis-scrape--parse-time-loose (s)
-  "Best-effort date parse on S, returning float-time or nil."
+  "Best-effort date parse on S, returning float-time or nil.
+Fills in zeros for missing hour/minute/second so date-only strings
+like \"May 15, 2026\" (no time component) still encode.  Preserves
+the timezone from the decoded time when present (e.g. trailing
+`Z'), so an explicit UTC stays UTC."
   (and (stringp s) (not (string-empty-p s))
        (condition-case nil
            (let ((decoded (parse-time-string s)))
              (and (decoded-time-year decoded)
-                  (float-time (encode-time decoded))))
+                  (decoded-time-month decoded)
+                  (decoded-time-day decoded)
+                  (float-time
+                   (encode-time (or (decoded-time-second decoded) 0)
+                                (or (decoded-time-minute decoded) 0)
+                                (or (decoded-time-hour decoded) 0)
+                                (decoded-time-day decoded)
+                                (decoded-time-month decoded)
+                                (decoded-time-year decoded)
+                                (decoded-time-zone decoded)))))
          (error nil))))
 
 (defun synaxis-scrape--node-date (node)
