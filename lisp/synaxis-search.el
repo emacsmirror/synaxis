@@ -185,22 +185,22 @@ so the format reflects the current window size."
                   (length tabulated-list-entries)
                 0))))
   :group "Navigation"
-  "n" ("Next"         next-line :stay-open t)
-  "p" ("Previous"     previous-line :stay-open t)
-  "RET" ("Open"       synaxis-search-show-entry)
+  "n" ("Next" next-line :stay-open t)
+  "p" ("Previous" previous-line :stay-open t)
+  "RET" ("Open" synaxis-search-show-entry)
   :group "Tags"
-  "r" ("Toggle read"     synaxis-search-toggle-read :stay-open t)
-  "R" ("Mark all read"   synaxis-search-mark-all-read)
-  "t" ("Edit tags"       synaxis-search-edit-tags :stay-open t)
+  "r" ("Toggle read" synaxis-search-toggle-read :stay-open t)
+  "R" ("Mark all read" synaxis-search-mark-all-read)
+  "t" ("Edit tags" synaxis-search-edit-tags :stay-open t)
   :group "Feeds"
-  "A" ("Add feed"     synaxis-add-feed)
-  "D" ("Remove feed"  synaxis-remove-feed)
-  "E" ("Edit feed"    synaxis-search-edit-feed)
+  "A" ("Add feed" synaxis-add-feed)
+  "D" ("Remove feed" synaxis-remove-feed)
+  "E" ("Edit feed" synaxis-search-edit-feed)
   "u" ("Update feeds" synaxis-search-update)
   :group "View"
-  "l" ("Filter"       synaxis-search-set-filter)
-  "g" ("Refresh"      synaxis-search-refresh)
-  "q" ("Quit"         quit-window))
+  "l" ("Filter" synaxis-search-set-filter)
+  "g" ("Refresh" synaxis-search-refresh)
+  "q" ("Quit" quit-window))
 
 (define-derived-mode synaxis-search-mode tabulated-list-mode "Synaxis"
   "Major mode for the synaxis entry list buffer."
@@ -310,20 +310,13 @@ current tag membership."
   "Apply tag-edit SELECTIONS to ENTRY-ID inside a single transaction.
 Each SELECTION is `+NAME' (add), `-NAME' (remove), or a bare NAME
 \(treated as add, so new tag names typed at the prompt work)."
-  (let ((db (synaxis-db--ensure-open)))
-    (synaxis-db--with-transaction db
-      (dolist (sel selections)
-        (cond
-         ((string-prefix-p "+" sel)
-          (let ((name (substring sel 1)))
-            (unless (string-empty-p name)
-              (synaxis-db-add-tag entry-id name))))
-         ((string-prefix-p "-" sel)
-          (let ((name (substring sel 1)))
-            (unless (string-empty-p name)
-              (synaxis-db-remove-tag entry-id name))))
-         ((not (string-empty-p sel))
-          (synaxis-db-add-tag entry-id sel)))))))
+  (synaxis-db--with-transaction (synaxis-db--ensure-open)
+    (cl-loop for sel in selections
+             when (string-match "\\`\\([-+]?\\)\\(.+\\)\\'" sel)
+             for name = (match-string 2 sel)
+             do (if (equal "-" (match-string 1 sel))
+                    (synaxis-db-remove-tag entry-id name)
+                  (synaxis-db-add-tag entry-id name)))))
 
 (defun synaxis-search-edit-tags ()
   "Add or remove tags on the entry at point via `completing-read-multiple'.
