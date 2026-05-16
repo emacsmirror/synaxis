@@ -253,5 +253,100 @@ Either argument may be nil."
       (setq s (replace-regexp-in-string (regexp-quote cleanup) "" s)))
     (string-trim s)))
 
+;;; Pure extraction
+
+(defun synaxis-scrape--find-anchor (node)
+  "Return (TITLE . HREF) from NODE.
+If NODE is an `a' element, use it directly; otherwise descend to
+the first `a' inside.  Returns nil if no anchor is found."
+  (let ((anchor (if (eq (dom-tag node) 'a)
+                    node
+                  (car (dom-by-tag node 'a)))))
+    (and anchor
+         (cons (string-trim
+                (mapconcat (lambda (c) (if (stringp c) c ""))
+                           (dom-children anchor) ""))
+               (dom-attr anchor 'href)))))
+
+(defun synaxis-scrape--node-html (node)
+  "Serialise NODE's children as an HTML string."
+  (if (and node (listp node))
+      (with-temp-buffer
+        (dolist (child (dom-children node))
+          (cond ((stringp child) (insert child))
+                ((listp child)   (dom-print child))))
+        (string-trim (buffer-string)))
+    ""))
+
+(defun synaxis-scrape--build-entry (node base-url rules)
+  "Build an entry plist for an extracted NODE.
+BASE-URL resolves relative hrefs.  RULES is the rule plist."
+  (and-let* ((pair (synaxis-scrape--find-anchor node))
+             (raw-title (car pair))
+             (raw-href  (cdr pair))
+             (link (synaxis-scrape--resolve-url base-url raw-href)))
+    (list :source-id    link
+          :title        (synaxis-scrape--strip-title
+                         raw-title (plist-get rules :title-cleanup))
+          :link         link
+          :date         (or (synaxis-scrape--extract-date
+                             node (plist-get rules :date-selector))
+                            (float-time))
+          :content      (synaxis-scrape--node-html node)
+          :content-type "html")))
+
+(defun synaxis-scrape--filter-urls (entries pattern limit)
+  "Filter ENTRIES by url PATTERN regexp, then truncate to LIMIT count."
+  (let ((filtered
+         (if (and pattern (not (string-empty-p pattern)))
+             (cl-remove-if-not
+              (lambda (e) (string-match-p pattern (plist-get e :link)))
+              entries)
+           entries)))
+    (if (and (integerp limit) (> limit 0))
+        (cl-subseq filtered 0 (min limit (length filtered)))
+      filtered)))
+
+(defun synaxis-scrape--dedupe (entries)
+  "Drop duplicate ENTRIES sharing the same :link.
+Keeps the first occurrence."
+  (let ((seen (make-hash-table :test 'equal))
+        out)
+    (dolist (e entries)
+      (let ((k (plist-get e :link)))
+        (unless (gethash k seen)
+          (puthash k t seen)
+          (push e out))))
+    (nreverse out)))
+
+(defun synaxis-scrape--extract (html base-url rules)
+  "Extract entries from HTML string with BASE-URL using RULES plist.
+Pure: no HTTP, no DB.  Returns a list of entry plists."
+  (let* ((dom (with-temp-buffer
+                (insert html)
+                (libxml-parse-html-region (point-min) (point-max))))
+         (selector (plist-get rules :url-selector))
+         (nodes    (and selector (synaxis-scrape--query selector dom)))
+         (built    (delq nil
+                         (mapcar (lambda (n)
+                                   (synaxis-scrape--build-entry n base-url rules))
+                                 nodes)))
+         (deduped  (synaxis-scrape--dedupe built)))
+    (synaxis-scrape--filter-urls deduped
+                                 (plist-get rules :url-pattern)
+                                 (plist-get rules :limit))))
+
+(defun synaxis-scrape--page-title (html rules)
+  "Return the document <title> from HTML, stripped per RULES."
+  (let* ((dom (with-temp-buffer
+                (insert html)
+                (libxml-parse-html-region (point-min) (point-max))))
+         (title-node (car (dom-by-tag dom 'title)))
+         (raw (and title-node
+                   (string-trim
+                    (mapconcat (lambda (c) (if (stringp c) c ""))
+                               (dom-children title-node) "")))))
+    (synaxis-scrape--strip-title raw (plist-get rules :title-cleanup))))
+
 (provide 'synaxis-scrape)
 ;;; synaxis-scrape.el ends here
