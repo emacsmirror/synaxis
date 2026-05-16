@@ -466,6 +466,28 @@ caps the result count.  Results are ordered by date descending."
   (let ((db (synaxis-db--ensure-open)))
     (sqlite-execute db "DELETE FROM entries WHERE id = ?;" (list id))))
 
+;;; Insert + autotag pipeline
+
+(defvar synaxis-new-entry-hook nil
+  "Functions run when a brand-new entry is inserted into the DB.
+Each function takes the new entry's id.  Not called when an existing
+entry is updated.")
+
+(defun synaxis-db-upsert-with-tags (url autotags entry)
+  "Upsert ENTRY under feed URL and tag fresh inserts.
+ENTRY's `:feed-url' is set by this helper.  When the row is newly
+inserted, applies the `unread' tag plus every tag in AUTOTAGS and
+runs `synaxis-new-entry-hook' with the new id.  Returns the id."
+  (let* ((entry     (plist-put entry :feed-url url))
+         (source-id (plist-get entry :source-id))
+         (existing  (synaxis-db-find-entry url source-id))
+         (id        (synaxis-db-upsert-entry entry)))
+    (unless existing
+      (synaxis-db-add-tag id "unread")
+      (cl-loop for tag in autotags do (synaxis-db-add-tag id tag))
+      (run-hook-with-args 'synaxis-new-entry-hook id))
+    id))
+
 ;;; Tags
 
 (defun synaxis-db-add-tag (entry-id tag)
