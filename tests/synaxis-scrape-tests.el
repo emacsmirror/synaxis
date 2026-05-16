@@ -345,5 +345,67 @@
       (synaxis-db-close)
       (delete-directory dir t))))
 
+(ert-deftest synaxis-scrape-test-buffer-shares-layout-with-search ()
+  "The test buffer reuses `synaxis-search--columns' for its format."
+  (let* ((dir (make-temp-file "synaxis-scrape-cmd" t))
+         (synaxis-db-file (expand-file-name "test.db" dir))
+         (synaxis-testing t)
+         (synaxis-db--connection nil)
+         (display-buffer-alist '((".*" display-buffer-no-window)))
+         (html (with-temp-buffer
+                 (insert-file-contents
+                  (expand-file-name "scrape-basic.html"
+                                    synaxis-scrape-tests--fixtures-dir))
+                 (buffer-string))))
+    (unwind-protect
+        (progn
+          (cl-letf (((symbol-function 'synaxis-scrape--fetch-html)
+                     (lambda (_url) html)))
+            (synaxis-scrape-test "https://example.com/blog/"
+                                 :url-selector "h2.entry-title a"))
+          (let ((buf (get-buffer "*synaxis-scrape-test*")))
+            (should buf)
+            (with-current-buffer buf
+              (should (derived-mode-p 'synaxis-search-mode))
+              ;; Same 5-column shape as the real list.
+              (should (= 5 (length tabulated-list-format)))
+              ;; Buffer-local store has the plist for each row.
+              (should (= 3 (length synaxis-scrape-test--entries))))))
+      (when (get-buffer "*synaxis-scrape-test*")
+        (kill-buffer "*synaxis-scrape-test*"))
+      (synaxis-db-close)
+      (delete-directory dir t))))
+
+(ert-deftest synaxis-scrape-test-show-renders-plist-without-db ()
+  "RET on a row pops `*synaxis-show*' rendering from the buffer store."
+  (let* ((dir (make-temp-file "synaxis-scrape-show" t))
+         (synaxis-db-file (expand-file-name "test.db" dir))
+         (synaxis-testing t)
+         (synaxis-db--connection nil)
+         (display-buffer-alist '((".*" display-buffer-no-window)))
+         (html (with-temp-buffer
+                 (insert-file-contents
+                  (expand-file-name "scrape-basic.html"
+                                    synaxis-scrape-tests--fixtures-dir))
+                 (buffer-string))))
+    (unwind-protect
+        (progn
+          (cl-letf (((symbol-function 'synaxis-scrape--fetch-html)
+                     (lambda (_url) html)))
+            (synaxis-scrape-test "https://example.com/blog/"
+                                 :url-selector "h2.entry-title a"))
+          (with-current-buffer "*synaxis-scrape-test*"
+            (goto-char (point-min))
+            (synaxis-scrape-test-show)
+            (with-current-buffer "*synaxis-show*"
+              (should (string-match-p
+                       "First Post"
+                       (buffer-substring-no-properties
+                        (point-min) (point-max)))))))
+      (dolist (b '("*synaxis-scrape-test*" "*synaxis-show*"))
+        (when (get-buffer b) (kill-buffer b)))
+      (synaxis-db-close)
+      (delete-directory dir t))))
+
 (provide 'synaxis-scrape-tests)
 ;;; synaxis-scrape-tests.el ends here
