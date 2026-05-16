@@ -37,6 +37,7 @@
 (declare-function synaxis-tag-rules-apply-all "synaxis" ())
 
 (defvar crm-separator)
+(defvar synaxis-scrape-test--entries)
 
 ;;; Customisation
 
@@ -185,6 +186,7 @@ so the format reflects the current window size."
   "n" ("Next" next-line :stay-open t)
   "p" ("Previous" previous-line :stay-open t)
   "RET" ("Open" synaxis-search-show-entry)
+  "b" ("Browse URL" synaxis-search-browse-entry)
   :group "Tags"
   "r" ("Toggle read" synaxis-search-toggle-read :stay-open t)
   "R" ("Mark all read" synaxis-search-mark-all-read)
@@ -274,6 +276,25 @@ the next `g')."
     (synaxis-show-entry id (mapcar #'car tabulated-list-entries))
     (with-current-buffer origin
       (synaxis-search--redraw-current))))
+
+(defun synaxis-search--entry-at-point ()
+  "Return the entry plist at point, dispatching by current mode.
+DB-backed in `synaxis-search-mode'; buffer-local store in
+`synaxis-scrape-test-mode'."
+  (and-let* ((id (tabulated-list-get-id)))
+    (if (derived-mode-p 'synaxis-scrape-test-mode)
+        (cl-find id synaxis-scrape-test--entries
+                 :key (lambda (e) (plist-get e :id))
+                 :test #'equal)
+      (synaxis-db-get-entry id))))
+
+(defun synaxis-search-browse-entry ()
+  "Open the entry at point's article URL in a browser."
+  (interactive)
+  (if-let* ((entry (synaxis-search--entry-at-point))
+            (link  (plist-get entry :link)))
+      (browse-url link)
+    (user-error "No link for this entry")))
 
 (defun synaxis-search-mark-all-read ()
   "Mark every entry currently visible in the buffer as read."
