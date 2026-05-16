@@ -160,14 +160,10 @@ Float widths in the spec are scaled by `window-width' at call time,
 so the format reflects the current window size."
   (let ((w (window-width)))
     (apply #'vector
-           (mapcar (lambda (col)
-                     (let* ((name  (car col))
-                            (spec  (nth 1 col))
-                            (sort  (nth 2 col))
-                            (props (nthcdr 3 col))
-                            (width (if (floatp spec)
-                                       (max 1 (truncate (* w spec)))
-                                     spec)))
+           (mapcar (pcase-lambda (`(,name ,spec ,sort . ,props))
+                     (let ((width (if (floatp spec)
+                                      (max 1 (truncate (* w spec)))
+                                    spec)))
                        (append (list name width sort) props)))
                    synaxis-search--columns))))
 
