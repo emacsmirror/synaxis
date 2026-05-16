@@ -312,5 +312,38 @@
     (should fired)
     (should (= 4 (length out)))))
 
+;;; synaxis-scrape-test command
+
+(ert-deftest synaxis-scrape-test-pops-buffer-without-saving ()
+  "Calling `synaxis-scrape-test' renders the preview buffer and does no DB writes."
+  (let* ((dir (make-temp-file "synaxis-scrape-cmd" t))
+         (synaxis-db-file (expand-file-name "test.db" dir))
+         (synaxis-testing t)
+         (synaxis-db--connection nil)
+         (display-buffer-alist '((".*" display-buffer-no-window)))
+         (html (with-temp-buffer
+                 (insert-file-contents
+                  (expand-file-name "scrape-basic.html"
+                                    synaxis-scrape-tests--fixtures-dir))
+                 (buffer-string))))
+    (unwind-protect
+        (progn
+          (cl-letf (((symbol-function 'synaxis-scrape--fetch-html)
+                     (lambda (_url) html)))
+            (synaxis-scrape-test "https://example.com/blog/"
+                                 :url-selector "h2.entry-title a"))
+          (let ((buf (get-buffer "*synaxis-scrape-test*")))
+            (should buf)
+            (with-current-buffer buf
+              (should (= 3 (length tabulated-list-entries)))))
+          ;; No feed or entry rows written.
+          (should-not (synaxis-db-list-feeds))
+          (should (zerop (caar (sqlite-select (synaxis-db--ensure-open)
+                                              "SELECT COUNT(*) FROM entries;")))))
+      (when (get-buffer "*synaxis-scrape-test*")
+        (kill-buffer "*synaxis-scrape-test*"))
+      (synaxis-db-close)
+      (delete-directory dir t))))
+
 (provide 'synaxis-scrape-tests)
 ;;; synaxis-scrape-tests.el ends here

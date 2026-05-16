@@ -180,5 +180,36 @@
 (ert-deftest synaxis-test-rules-wires-into-new-entry-hook ()
   (should (memq #'synaxis-tag-rules-apply-entry synaxis-new-entry-hook)))
 
+;;; synaxis-create-feed
+
+(ert-deftest synaxis-test-create-feed-registers-feed-and-rule ()
+  (synaxis-tests--with-tmp
+    (synaxis-create-feed "https://example.com/blog/"
+                         :title "Blog"
+                         :url-selector "h2 a"
+                         :content-selector "article")
+    (let ((feed (synaxis-db-get-feed "https://example.com/blog/"))
+          (rule (synaxis-db-get-scrape-rule "https://example.com/blog/")))
+      (should (equal "Blog" (plist-get feed :title)))
+      (should (equal "scrape" (plist-get feed :type)))
+      (should (equal "h2 a" (plist-get rule :url-selector)))
+      (should (equal "article" (plist-get rule :content-selector))))))
+
+(ert-deftest synaxis-test-create-feed-applies-tags-as-autotags ()
+  (synaxis-tests--with-tmp
+    (synaxis-create-feed "https://example.com/x/"
+                         :url-selector "a"
+                         :tags '("hw" "diy"))
+    (let* ((feed (synaxis-db-get-feed "https://example.com/x/"))
+           (meta (plist-get feed :meta))
+           (autotags (append (plist-get meta :autotags) nil)))
+      (should (member "hw" autotags))
+      (should (member "diy" autotags)))))
+
+(ert-deftest synaxis-test-create-feed-errors-without-url-selector ()
+  (synaxis-tests--with-tmp
+    (should-error (synaxis-create-feed "https://example.com/x/")
+                  :type 'user-error)))
+
 (provide 'synaxis-tests)
 ;;; synaxis-tests.el ends here
