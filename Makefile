@@ -1,24 +1,56 @@
+.POSIX:
+
 EMACS         ?= emacs
 KEYMAP_POPUP  ?= $(HOME)/Dev/emacs-lisp/keymap-popup
 LISP          := $(wildcard lisp/synaxis*.el)
 TESTS         := $(wildcard tests/synaxis*-tests.el)
 
-LOAD := -L lisp -L $(KEYMAP_POPUP)
+ifndef EMACS_CMD
+GUIX := $(shell command -v guix 2>/dev/null)
+ifdef GUIX
+GUIX_SHELL := guix shell --pure -D -f guix.scm emacs-next --
+EMACS_CMD  := $(GUIX_SHELL) $(EMACS)
+LOAD       := -L lisp
+else
+GUIX_SHELL :=
+EMACS_CMD  := $(EMACS)
+LOAD       := -L lisp -L $(KEYMAP_POPUP)
+endif
+endif
 
-.PHONY: all compile test clean autoloads load
+GUIX_WRAP = $(if $(GUIX_SHELL),$(GUIX_SHELL) $(MAKE) --no-print-directory EMACS_CMD=$(EMACS) LOAD="-L lisp",$(MAKE) --no-print-directory)
+
+BATCH = $(EMACS_CMD) -Q --batch $(LOAD)
+
+.PHONY: all compile do-compile test do-test lint do-lint clean autoloads load
 
 all: compile test
 
 compile:
-	$(EMACS) -Q --batch $(LOAD) -f batch-byte-compile $(LISP)
+	@$(GUIX_WRAP) do-compile
+
+do-compile:
+	$(BATCH) -f batch-byte-compile $(LISP)
 
 test:
-	$(EMACS) -Q --batch $(LOAD) -L tests -l ert \
+	@$(GUIX_WRAP) do-test
+
+do-test:
+	$(BATCH) -L tests -l ert \
 	    $(addprefix -l ,$(TESTS)) \
 	    -f ert-run-tests-batch-and-exit
 
+lint:
+	@$(GUIX_WRAP) do-lint
+
+do-lint:
+	@for f in $(LISP); do \
+	  echo "Checking $$f..."; \
+	  $(BATCH) --eval "(checkdoc-file \"$$f\")" || exit 1; \
+	done
+
 autoloads:
-	$(EMACS) -Q --batch \
+	$(EMACS_CMD) -Q --batch \
 	    --eval "(setq make-backup-files nil)" \
 	    --eval "(require 'loaddefs-gen)" \
 	    --eval "(loaddefs-generate \"lisp\" \"lisp/synaxis-autoloads.el\")"
