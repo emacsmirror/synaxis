@@ -469,40 +469,77 @@ Routed to from `synaxis-fetch-feed' when the feed's type is `scrape'."
 
 ;;; Dry-run test command
 
+(declare-function synaxis-search-mode "synaxis-search" ())
+(declare-function synaxis-search--format "synaxis-search" ())
+(declare-function synaxis-search--entry-columns "synaxis-search" (entry))
+(declare-function synaxis-show-entry-plist "synaxis-show" (entry))
+
 (defvar synaxis-scrape-test--buffer-name "*synaxis-scrape-test*"
   "Buffer name used by `synaxis-scrape-test'.")
 
-(defun synaxis-scrape--test-buffer-format ()
-  "Return `tabulated-list-format' for the scrape-test buffer."
-  (let ((w (window-width)))
-    (vector (list "Date" 10 t)
-            (list "Title" (max 30 (truncate (* w 0.4))) t)
-            (list "Link"  (max 30 (truncate (* w 0.5))) t))))
+(defvar-local synaxis-scrape-test--entries nil
+  "Buffer-local list of preview entry plists.
+RET in `synaxis-scrape-test-mode' looks up the entry at point here
+and renders it via `synaxis-show-entry-plist'.  Inspect with
+`M-x describe-variable RET synaxis-scrape-test--entries'.")
 
-(defun synaxis-scrape--test-row (entry)
-  "Build a tabulated-list row from ENTRY."
-  (list (plist-get entry :link)
-        (vector (format-time-string
-                 "%Y-%m-%d"
-                 (seconds-to-time (or (plist-get entry :date) 0)))
-                (or (plist-get entry :title) "")
-                (or (plist-get entry :link) ""))))
+(defun synaxis-scrape-test--prep-entry (entry feed-title)
+  "Augment ENTRY plist with the fields needed by the search list view."
+  (list :id          (plist-get entry :source-id)
+        :source-id   (plist-get entry :source-id)
+        :feed-title  feed-title
+        :feed-url    nil
+        :title       (plist-get entry :title)
+        :link        (plist-get entry :link)
+        :date        (plist-get entry :date)
+        :content     (plist-get entry :content)
+        :content-type (plist-get entry :content-type)
+        :unread      t
+        :tags        nil))
 
-(define-derived-mode synaxis-scrape-test-mode tabulated-list-mode "Synaxis-Test"
-  "Read-only mode for previewing scrape rules without saving."
-  (setq tabulated-list-padding 1)
-  (setq-local truncate-lines t))
+(define-derived-mode synaxis-scrape-test-mode synaxis-search-mode "Synax-Test"
+  "Preview scraped entries without writing to the database.
+Inherits everything from `synaxis-search-mode' so the layout
+matches the real list; RET on a row renders the entry via
+`synaxis-show-entry-plist' using `synaxis-scrape-test--entries' as
+the source instead of the DB."
+  (setq-local revert-buffer-function
+              (lambda (&rest _)
+                (user-error "Re-invoke synaxis-scrape-test to refresh"))))
+
+(defun synaxis-scrape-test-show ()
+  "Render the entry at point from the buffer-local preview store."
+  (interactive)
+  (when-let* ((id (tabulated-list-get-id))
+              (entry (cl-find id synaxis-scrape-test--entries
+                              :key (lambda (e) (plist-get e :id))
+                              :test #'equal)))
+    (require 'synaxis-show)
+    (synaxis-show-entry-plist entry)))
+
+(define-key synaxis-scrape-test-mode-map (kbd "RET")
+  #'synaxis-scrape-test-show)
 
 (defun synaxis-scrape--render-test-buffer (url entries)
   "Pop the scrape-test buffer with ENTRIES extracted from URL."
-  (let ((buf (get-buffer-create synaxis-scrape-test--buffer-name)))
+  (require 'synaxis-search)
+  (let ((buf (get-buffer-create synaxis-scrape-test--buffer-name))
+        (feed-title (format "(test) %s" url)))
     (with-current-buffer buf
       (synaxis-scrape-test-mode)
-      (setq tabulated-list-format (synaxis-scrape--test-buffer-format))
+      (setq synaxis-scrape-test--entries
+            (mapcar (lambda (e) (synaxis-scrape-test--prep-entry e feed-title))
+                    entries))
+      (setq tabulated-list-format (synaxis-search--format))
+      (setq tabulated-list-padding 1)
       (tabulated-list-init-header)
-      (setq tabulated-list-entries (mapcar #'synaxis-scrape--test-row entries))
+      (setq tabulated-list-entries
+            (mapcar (lambda (e)
+                      (list (plist-get e :id)
+                            (synaxis-search--entry-columns e)))
+                    synaxis-scrape-test--entries))
       (setq-local mode-line-buffer-identification
-                  (list (format "synaxis test  [%d items from %s]"
+                  (list (format "scrape-test  [%d items from %s]"
                                 (length entries) url)))
       (tabulated-list-print))
     (pop-to-buffer buf)))
