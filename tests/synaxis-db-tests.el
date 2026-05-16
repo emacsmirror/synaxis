@@ -10,34 +10,20 @@
 
 (load (expand-file-name "../lisp/synaxis-db.el"
                         (file-name-directory (or load-file-name buffer-file-name))))
-
-;;; Setup helpers
-
-(defmacro synaxis-db-tests--with-tmp (&rest body)
-  "Run BODY with a fresh temporary database, then clean up."
-  (declare (indent 0) (debug t))
-  `(let* ((dir (make-temp-file "synaxis-db-test" t))
-          (synaxis-db-file (expand-file-name "test.db" dir))
-          (synaxis-testing t)
-          (synaxis-db--connection nil))
-     (unwind-protect
-         (progn ,@body)
-       (synaxis-db-close)
-       (when (file-directory-p dir)
-         (delete-directory dir t)))))
+(require 'synaxis-test-utils)
 
 ;;; Migration framework
 
 (ert-deftest synaxis-db-test-bootstrap-records-target-version ()
   "Fresh install lands at `synaxis-db--schema-target-version'."
-  (synaxis-db-tests--with-tmp
+  (synaxis-tests--with-tmp
    (let ((db (synaxis-db--ensure-open)))
      (should (= synaxis-db--schema-target-version
                 (caar (sqlite-select db "SELECT version FROM schema_version;")))))))
 
 (ert-deftest synaxis-db-test-bootstrap-idempotent ()
   "Re-bootstrapping an up-to-date DB doesn't run migrations again."
-  (synaxis-db-tests--with-tmp
+  (synaxis-tests--with-tmp
    (let ((db (synaxis-db--ensure-open)))
      ;; Run bootstrap a second time.
      (synaxis-db--bootstrap db)
@@ -46,7 +32,7 @@
 
 (ert-deftest synaxis-db-test-migrate-advances-one-step ()
   "A pending migration bumps version exactly to its target."
-  (synaxis-db-tests--with-tmp
+  (synaxis-tests--with-tmp
    (let* ((db (synaxis-db--ensure-open))
           (saw 0)
           (synaxis-db--schema-target-version 99)
@@ -62,7 +48,7 @@
 
 (ert-deftest synaxis-db-test-v2-tags-table-present ()
   "Fresh install has the `tags' registry table."
-  (synaxis-db-tests--with-tmp
+  (synaxis-tests--with-tmp
    (let ((db (synaxis-db--ensure-open)))
      (should (sqlite-select
               db "SELECT name FROM sqlite_master
@@ -70,7 +56,7 @@
 
 (ert-deftest synaxis-db-test-entry-tags-fk-enforces-tag-existence ()
   "Inserting into entry_tags with an unregistered tag errors."
-  (synaxis-db-tests--with-tmp
+  (synaxis-tests--with-tmp
    (synaxis-db-add-feed "https://example.com/fk")
    (let ((db (synaxis-db--ensure-open))
          (id (synaxis-db-upsert-entry
@@ -83,7 +69,7 @@
 
 (ert-deftest synaxis-db-test-tag-rename-via-update-cascades ()
   "Updating tags.tag propagates to entry_tags via FK cascade."
-  (synaxis-db-tests--with-tmp
+  (synaxis-tests--with-tmp
    (synaxis-db-add-feed "https://example.com/c")
    (let ((id (synaxis-db-upsert-entry
               '(:feed-url "https://example.com/c" :source-id "1"
@@ -96,7 +82,7 @@
 
 (ert-deftest synaxis-db-test-tag-delete-cascades ()
   "Deleting a row in tags cascades to entry_tags."
-  (synaxis-db-tests--with-tmp
+  (synaxis-tests--with-tmp
    (synaxis-db-add-feed "https://example.com/d")
    (let ((id (synaxis-db-upsert-entry
               '(:feed-url "https://example.com/d" :source-id "1"
@@ -108,7 +94,7 @@
 
 (ert-deftest synaxis-db-test-migration-1-to-2-preserves-data ()
   "Seeding a v1 DB then bootstrapping migrates entry_tags rows intact."
-  (synaxis-db-tests--with-tmp
+  (synaxis-tests--with-tmp
    ;; Build a v1 database manually, side-stepping the bootstrap.
    (let* ((file (expand-file-name "v1.db"
                                   (file-name-directory synaxis-db-file)))
@@ -149,7 +135,7 @@
 
 (ert-deftest synaxis-db-test-bootstrap-creates-schema-version ()
   "On first open the schema_version row is set to the current target."
-  (synaxis-db-tests--with-tmp
+  (synaxis-tests--with-tmp
    (let ((db (synaxis-db--ensure-open)))
      (should (= synaxis-db--schema-target-version
                 (caar (sqlite-select db "SELECT version FROM schema_version;")))))))
@@ -158,7 +144,7 @@
 
 (ert-deftest synaxis-db-test-add-and-get-feed ()
   "Adding a feed and reading it back round-trips all fields."
-  (synaxis-db-tests--with-tmp
+  (synaxis-tests--with-tmp
    (synaxis-db-add-feed "https://example.com/feed.xml"
                         '(:title "Example" :type "atom"
                                  :meta (:author "Alice")))
@@ -172,13 +158,13 @@
 
 (ert-deftest synaxis-db-test-add-feed-defaults-type-to-rss ()
   "Omitting :type defaults to rss."
-  (synaxis-db-tests--with-tmp
+  (synaxis-tests--with-tmp
    (synaxis-db-add-feed "https://example.com/a" '(:title "A"))
    (should (equal "rss" (plist-get (synaxis-db-get-feed "https://example.com/a") :type)))))
 
 (ert-deftest synaxis-db-test-list-feeds-ordered-by-title ()
   "Feeds are listed alphabetically by title (case-insensitive)."
-  (synaxis-db-tests--with-tmp
+  (synaxis-tests--with-tmp
    (synaxis-db-add-feed "https://a" '(:title "Charlie"))
    (synaxis-db-add-feed "https://b" '(:title "alpha"))
    (synaxis-db-add-feed "https://c" '(:title "Bravo"))
@@ -188,7 +174,7 @@
 
 (ert-deftest synaxis-db-test-remove-feed-cascades-entries-and-tags ()
   "Removing a feed deletes its entries and entry tags."
-  (synaxis-db-tests--with-tmp
+  (synaxis-tests--with-tmp
    (synaxis-db-add-feed "https://example.com/f")
    (let ((id (synaxis-db-upsert-entry
               '(:feed-url "https://example.com/f"
@@ -201,7 +187,7 @@
 
 (ert-deftest synaxis-db-test-set-feed-cache-headers-updates-fields ()
   "Cache header fields round-trip."
-  (synaxis-db-tests--with-tmp
+  (synaxis-tests--with-tmp
    (synaxis-db-add-feed "https://example.com/h")
    (synaxis-db-set-feed-cache-headers
     "https://example.com/h"
@@ -215,7 +201,7 @@
 
 (ert-deftest synaxis-db-test-set-feed-title-if-empty-fills-null ()
   "Back-fill applies when current title is NULL."
-  (synaxis-db-tests--with-tmp
+  (synaxis-tests--with-tmp
    (synaxis-db-add-feed "https://example.com/t1")
    (synaxis-db-set-feed-title-if-empty "https://example.com/t1" "Discovered")
    (should (equal "Discovered"
@@ -223,7 +209,7 @@
 
 (ert-deftest synaxis-db-test-set-feed-title-if-empty-preserves-existing ()
   "Back-fill is a no-op when a title is already set."
-  (synaxis-db-tests--with-tmp
+  (synaxis-tests--with-tmp
    (synaxis-db-add-feed "https://example.com/t2" '(:title "User Title"))
    (synaxis-db-set-feed-title-if-empty "https://example.com/t2" "Other")
    (should (equal "User Title"
@@ -233,7 +219,7 @@
 
 (ert-deftest synaxis-db-test-upsert-entry-insert-and-update ()
   "First upsert inserts; second with same key updates."
-  (synaxis-db-tests--with-tmp
+  (synaxis-tests--with-tmp
    (synaxis-db-add-feed "https://example.com/u")
    (let ((id1 (synaxis-db-upsert-entry
                '(:feed-url "https://example.com/u" :source-id "1"
@@ -249,7 +235,7 @@
 
 (ert-deftest synaxis-db-test-get-entry-by-id ()
   "All entry columns round-trip, including JSON meta."
-  (synaxis-db-tests--with-tmp
+  (synaxis-tests--with-tmp
    (synaxis-db-add-feed "https://example.com/g")
    (let ((id (synaxis-db-upsert-entry
               '(:feed-url "https://example.com/g" :source-id "abc"
@@ -266,7 +252,7 @@
 
 (ert-deftest synaxis-db-test-find-entry-by-feed-and-source-id ()
   "find-entry returns the id or nil."
-  (synaxis-db-tests--with-tmp
+  (synaxis-tests--with-tmp
    (synaxis-db-add-feed "https://example.com/l")
    (let ((id (synaxis-db-upsert-entry
               '(:feed-url "https://example.com/l" :source-id "k"
@@ -276,7 +262,7 @@
 
 (ert-deftest synaxis-db-test-list-entries-with-where ()
   "WHERE clauses scope the result."
-  (synaxis-db-tests--with-tmp
+  (synaxis-tests--with-tmp
    (synaxis-db-add-feed "https://example.com/a")
    (synaxis-db-add-feed "https://example.com/b")
    (synaxis-db-upsert-entry '(:feed-url "https://example.com/a" :source-id "1"
@@ -292,7 +278,7 @@
 
 (ert-deftest synaxis-db-test-list-entries-respects-limit ()
   "LIMIT caps the result count."
-  (synaxis-db-tests--with-tmp
+  (synaxis-tests--with-tmp
    (synaxis-db-add-feed "https://example.com/lim")
    (dotimes (i 5)
      (synaxis-db-upsert-entry
@@ -302,7 +288,7 @@
 
 (ert-deftest synaxis-db-test-list-entries-includes-unread-flag ()
   "Each row's :unread reflects the tag without a second query."
-  (synaxis-db-tests--with-tmp
+  (synaxis-tests--with-tmp
    (synaxis-db-add-feed "https://example.com/u")
    (let ((id1 (synaxis-db-upsert-entry
                '(:feed-url "https://example.com/u" :source-id "1"
@@ -319,7 +305,7 @@
 
 (ert-deftest synaxis-db-test-list-entries-includes-tags-list ()
   "Each row's :tags reflects every tag attached to the entry."
-  (synaxis-db-tests--with-tmp
+  (synaxis-tests--with-tmp
    (synaxis-db-add-feed "https://example.com/tt")
    (let ((id (synaxis-db-upsert-entry
               '(:feed-url "https://example.com/tt" :source-id "1"
@@ -333,7 +319,7 @@
 
 (ert-deftest synaxis-db-test-list-entries-empty-tags-yields-nil ()
   "An untagged entry has :tags nil and :unread nil."
-  (synaxis-db-tests--with-tmp
+  (synaxis-tests--with-tmp
    (synaxis-db-add-feed "https://example.com/empty")
    (synaxis-db-upsert-entry '(:feed-url "https://example.com/empty"
                                         :source-id "1"
@@ -344,7 +330,7 @@
 
 (ert-deftest synaxis-db-test-list-entries-includes-feed-title ()
   "Joined query exposes feed title under :feed-title."
-  (synaxis-db-tests--with-tmp
+  (synaxis-tests--with-tmp
    (synaxis-db-add-feed "https://example.com/j" '(:title "JFeed"))
    (synaxis-db-upsert-entry '(:feed-url "https://example.com/j" :source-id "x"
                                         :title "T" :date 1.0))
@@ -353,7 +339,7 @@
 
 (ert-deftest synaxis-db-test-delete-entry-cascades-tags ()
   "Deleting an entry deletes its tag rows."
-  (synaxis-db-tests--with-tmp
+  (synaxis-tests--with-tmp
    (synaxis-db-add-feed "https://example.com/d")
    (let ((id (synaxis-db-upsert-entry
               '(:feed-url "https://example.com/d" :source-id "1"
@@ -367,7 +353,7 @@
 
 (ert-deftest synaxis-db-test-scrape-rule-round-trip ()
   "Add then read back every supported scrape-rule field."
-  (synaxis-db-tests--with-tmp
+  (synaxis-tests--with-tmp
    (synaxis-db-add-feed "https://example.com/sc" '(:type "scrape"))
    (synaxis-db-add-scrape-rule
     "https://example.com/sc"
@@ -391,7 +377,7 @@
 
 (ert-deftest synaxis-db-test-scrape-rule-replace-on-conflict ()
   "Re-adding a rule for the same feed updates rather than errors."
-  (synaxis-db-tests--with-tmp
+  (synaxis-tests--with-tmp
    (synaxis-db-add-feed "https://example.com/sc" '(:type "scrape"))
    (synaxis-db-add-scrape-rule "https://example.com/sc"
                                '(:url-selector "a"))
@@ -403,11 +389,11 @@
                              :url-selector)))))
 
 (ert-deftest synaxis-db-test-scrape-rule-nil-for-unknown ()
-  (synaxis-db-tests--with-tmp
+  (synaxis-tests--with-tmp
    (should-not (synaxis-db-get-scrape-rule "https://nope/"))))
 
 (ert-deftest synaxis-db-test-list-scrape-rules ()
-  (synaxis-db-tests--with-tmp
+  (synaxis-tests--with-tmp
    (synaxis-db-add-feed "https://example.com/a" '(:type "scrape"))
    (synaxis-db-add-feed "https://example.com/b" '(:type "scrape"))
    (synaxis-db-add-scrape-rule "https://example.com/a" '(:url-selector "x"))
@@ -420,7 +406,7 @@
 
 (ert-deftest synaxis-db-test-set-feed-title-force-overwrites ()
   "set-feed-title overwrites the existing title unconditionally."
-  (synaxis-db-tests--with-tmp
+  (synaxis-tests--with-tmp
    (synaxis-db-add-feed "https://example.com/t" '(:title "Old"))
    (synaxis-db-set-feed-title "https://example.com/t" "New")
    (should (equal "New"
@@ -429,7 +415,7 @@
 
 (ert-deftest synaxis-db-test-set-feed-autotags-replaces-list ()
   "set-feed-autotags replaces autotags but keeps other meta keys."
-  (synaxis-db-tests--with-tmp
+  (synaxis-tests--with-tmp
    (synaxis-db-add-feed "https://example.com/a"
                         '(:meta (:autotags ["old"] :author "Alice")))
    (synaxis-db-set-feed-autotags "https://example.com/a" '("new" "fresh"))
@@ -442,7 +428,7 @@
 
 (ert-deftest synaxis-db-test-update-scrape-rule-field ()
   "update-scrape-rule-field changes one key only."
-  (synaxis-db-tests--with-tmp
+  (synaxis-tests--with-tmp
    (synaxis-db-add-feed "https://example.com/sc" '(:type "scrape"))
    (synaxis-db-add-scrape-rule
     "https://example.com/sc"
@@ -459,7 +445,7 @@
      (should (equal " - Site" (plist-get r :title-cleanup))))))
 
 (ert-deftest synaxis-db-test-update-scrape-rule-field-errors-when-missing ()
-  (synaxis-db-tests--with-tmp
+  (synaxis-tests--with-tmp
    (should-error (synaxis-db-update-scrape-rule-field
                   "https://nope/" :url-selector "x")
                  :type 'user-error)))
@@ -467,7 +453,7 @@
 ;;; Tag registry CRUD
 
 (ert-deftest synaxis-db-test-list-tags-returns-registry ()
-  (synaxis-db-tests--with-tmp
+  (synaxis-tests--with-tmp
    (synaxis-db-add-feed "https://example.com/r")
    (let ((id (synaxis-db-upsert-entry
               '(:feed-url "https://example.com/r" :source-id "1"
@@ -482,7 +468,7 @@
      (should-not (plist-get (cdr (assoc "rust" by-tag)) :system)))))
 
 (ert-deftest synaxis-db-test-rename-tag-no-conflict-uses-cascade ()
-  (synaxis-db-tests--with-tmp
+  (synaxis-tests--with-tmp
    (synaxis-db-add-feed "https://example.com/rn")
    (let ((id (synaxis-db-upsert-entry
               '(:feed-url "https://example.com/rn" :source-id "1"
@@ -494,7 +480,7 @@
 
 (ert-deftest synaxis-db-test-rename-tag-merges-on-conflict ()
   "Renaming OLD to an existing NEW merges memberships and removes OLD."
-  (synaxis-db-tests--with-tmp
+  (synaxis-tests--with-tmp
    (synaxis-db-add-feed "https://example.com/m")
    (let ((id1 (synaxis-db-upsert-entry
                '(:feed-url "https://example.com/m" :source-id "1"
@@ -515,13 +501,13 @@
        (should-not (member "alpha" tags))))))
 
 (ert-deftest synaxis-db-test-rename-tag-rejects-empty ()
-  (synaxis-db-tests--with-tmp
+  (synaxis-tests--with-tmp
    (should-error (synaxis-db-rename-tag "" "new")  :type 'user-error)
    (should-error (synaxis-db-rename-tag "old" "")  :type 'user-error)
    (should-error (synaxis-db-rename-tag "x" "x")   :type 'user-error)))
 
 (ert-deftest synaxis-db-test-delete-tag-cascades-to-entry-tags ()
-  (synaxis-db-tests--with-tmp
+  (synaxis-tests--with-tmp
    (synaxis-db-add-feed "https://example.com/del")
    (let ((id (synaxis-db-upsert-entry
               '(:feed-url "https://example.com/del" :source-id "1"
@@ -531,7 +517,7 @@
      (should-not (member "doomed" (synaxis-db-get-tags id))))))
 
 (ert-deftest synaxis-db-test-set-tag-face-round-trips ()
-  (synaxis-db-tests--with-tmp
+  (synaxis-tests--with-tmp
    (synaxis-db-add-feed "https://example.com/f")
    (let ((id (synaxis-db-upsert-entry
               '(:feed-url "https://example.com/f" :source-id "1"
@@ -550,7 +536,7 @@
 
 (ert-deftest synaxis-db-test-add-tag-idempotent ()
   "Adding the same tag twice is fine."
-  (synaxis-db-tests--with-tmp
+  (synaxis-tests--with-tmp
    (synaxis-db-add-feed "https://example.com/t")
    (let ((id (synaxis-db-upsert-entry
               '(:feed-url "https://example.com/t" :source-id "1"
@@ -561,7 +547,7 @@
 
 (ert-deftest synaxis-db-test-get-tags-returns-strings ()
   "get-tags returns a list of tag strings."
-  (synaxis-db-tests--with-tmp
+  (synaxis-tests--with-tmp
    (synaxis-db-add-feed "https://example.com/t2")
    (let ((id (synaxis-db-upsert-entry
               '(:feed-url "https://example.com/t2" :source-id "1"
@@ -573,7 +559,7 @@
 
 (ert-deftest synaxis-db-test-bulk-add-tag ()
   "Bulk-add-tag adds TAG only to the listed ids."
-  (synaxis-db-tests--with-tmp
+  (synaxis-tests--with-tmp
    (synaxis-db-add-feed "https://example.com/a")
    (let ((ids (cl-loop for i below 5
                        collect (synaxis-db-upsert-entry
@@ -588,7 +574,7 @@
 
 (ert-deftest synaxis-db-test-bulk-add-tag-idempotent ()
   "Adding the same tag twice via bulk yields no duplicates."
-  (synaxis-db-tests--with-tmp
+  (synaxis-tests--with-tmp
    (synaxis-db-add-feed "https://example.com/i")
    (let ((id (synaxis-db-upsert-entry
               '(:feed-url "https://example.com/i" :source-id "1"
@@ -599,12 +585,12 @@
 
 (ert-deftest synaxis-db-test-bulk-add-tag-empty-ids-noop ()
   "Empty ENTRY-IDS is a silent no-op."
-  (synaxis-db-tests--with-tmp
+  (synaxis-tests--with-tmp
    (should-not (synaxis-db-bulk-add-tag nil "foo"))))
 
 (ert-deftest synaxis-db-test-bulk-add-tag-survives-large-batch ()
   "Bulk-add of >chunk-size ids still tags every entry."
-  (synaxis-db-tests--with-tmp
+  (synaxis-tests--with-tmp
    (synaxis-db-add-feed "https://example.com/big")
    ;; Pretend the parameter limit is tiny so we exercise the chunking loop.
    (let ((synaxis-db--max-vars 8))
@@ -619,7 +605,7 @@
 
 (ert-deftest synaxis-db-test-bulk-remove-tag ()
   "Bulk-remove-tag clears TAG only from the listed ids."
-  (synaxis-db-tests--with-tmp
+  (synaxis-tests--with-tmp
    (synaxis-db-add-feed "https://example.com/b")
    (let ((ids (cl-loop for i below 5
                        collect (synaxis-db-upsert-entry
@@ -635,12 +621,12 @@
 
 (ert-deftest synaxis-db-test-bulk-remove-tag-empty-ids-noop ()
   "Passing nil as ENTRY-IDS is a silent no-op."
-  (synaxis-db-tests--with-tmp
+  (synaxis-tests--with-tmp
    (should-not (synaxis-db-bulk-remove-tag nil "unread"))))
 
 (ert-deftest synaxis-db-test-remove-tag ()
   "remove-tag deletes only the named tag."
-  (synaxis-db-tests--with-tmp
+  (synaxis-tests--with-tmp
    (synaxis-db-add-feed "https://example.com/rt")
    (let ((id (synaxis-db-upsert-entry
               '(:feed-url "https://example.com/rt" :source-id "1"
@@ -654,7 +640,7 @@
 
 (ert-deftest synaxis-db-test-with-transaction-rolls-back-on-error ()
   "An error inside the transaction rolls back partial inserts."
-  (synaxis-db-tests--with-tmp
+  (synaxis-tests--with-tmp
    (synaxis-db-add-feed "https://a.example/feed")
    (should-error
     (let ((db (synaxis-db--ensure-open)))

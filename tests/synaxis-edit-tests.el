@@ -10,30 +10,23 @@
 
 (load (expand-file-name "../lisp/synaxis-edit.el"
                         (file-name-directory (or load-file-name buffer-file-name))))
+(require 'synaxis-test-utils)
 
 (defmacro synaxis-edit-tests--with-tmp (&rest body)
   "Run BODY with a fresh DB and a registered scrape feed."
   (declare (indent 0) (debug t))
-  `(let* ((dir (make-temp-file "synaxis-edit-test" t))
-          (synaxis-db-file (expand-file-name "test.db" dir))
-          (synaxis-testing t)
-          (synaxis-db--connection nil)
-          (synaxis-edit--current-url "https://example.com/sc"))
-     (unwind-protect
-         (progn
-           (synaxis-db-add-feed "https://example.com/sc"
-                                '(:title "Test Feed"
-                                         :type "scrape"
-                                         :meta (:autotags ["alpha" "beta"])))
-           (synaxis-db-add-scrape-rule
-            "https://example.com/sc"
-            '(:url-selector "h2 a"
-                            :content-selector "article"
-                            :title-cleanup " - Site"))
-           ,@body)
-       (synaxis-db-close)
-       (when (file-directory-p dir)
-         (delete-directory dir t)))))
+  `(synaxis-tests--with-tmp
+    (synaxis-db-add-feed "https://example.com/sc"
+                         '(:title "Test Feed"
+                                  :type "scrape"
+                                  :meta (:autotags ["alpha" "beta"])))
+    (synaxis-db-add-scrape-rule
+     "https://example.com/sc"
+     '(:url-selector "h2 a"
+                     :content-selector "article"
+                     :title-cleanup " - Site"))
+    (let ((synaxis-edit--current-url "https://example.com/sc"))
+      ,@body)))
 
 ;;; Predicates
 

@@ -10,34 +10,25 @@
 
 (load (expand-file-name "../lisp/synaxis-parse.el"
                         (file-name-directory (or load-file-name buffer-file-name))))
-
-(defconst synaxis-parse-tests--fixtures-dir
-  (expand-file-name "fixtures"
-                    (file-name-directory (or load-file-name buffer-file-name))))
-
-(defun synaxis-parse-tests--load (name)
-  "Read fixture NAME as a string."
-  (with-temp-buffer
-    (insert-file-contents (expand-file-name name synaxis-parse-tests--fixtures-dir))
-    (buffer-string)))
+(require 'synaxis-test-utils)
 
 ;;; Format detection
 
 (ert-deftest synaxis-parse-test-detect-atom ()
   (should (eq 'atom (synaxis-parse--detect-format-string
-                     (synaxis-parse-tests--load "atom-1.0-minimal.xml")))))
+                     (synaxis-tests--load-fixture "atom-1.0-minimal.xml")))))
 
 (ert-deftest synaxis-parse-test-detect-rss ()
   (should (eq 'rss (synaxis-parse--detect-format-string
-                    (synaxis-parse-tests--load "rss-2.0-minimal.xml")))))
+                    (synaxis-tests--load-fixture "rss-2.0-minimal.xml")))))
 
 (ert-deftest synaxis-parse-test-detect-rss1 ()
   (should (eq 'rss1 (synaxis-parse--detect-format-string
-                     (synaxis-parse-tests--load "rss-1.0-rdf.xml")))))
+                     (synaxis-tests--load-fixture "rss-1.0-rdf.xml")))))
 
 (ert-deftest synaxis-parse-test-detect-json ()
   (should (eq 'json (synaxis-parse--detect-format-string
-                     (synaxis-parse-tests--load "json-feed-1.1.json")))))
+                     (synaxis-tests--load-fixture "json-feed-1.1.json")))))
 
 ;;; Date helpers
 
@@ -57,7 +48,7 @@
 
 (ert-deftest synaxis-parse-test-atom-1.0-minimal ()
   (let* ((feed (synaxis-parse-string
-                (synaxis-parse-tests--load "atom-1.0-minimal.xml")))
+                (synaxis-tests--load-fixture "atom-1.0-minimal.xml")))
          (entries (plist-get feed :entries))
          (e (car entries)))
     (should (eq 'atom (plist-get feed :type)))
@@ -72,12 +63,12 @@
 
 (ert-deftest synaxis-parse-test-atom-1.0-xhtml-content ()
   (let* ((feed (synaxis-parse-string
-                (synaxis-parse-tests--load "atom-1.0-xhtml-content.xml")))
+                (synaxis-tests--load-fixture "atom-1.0-xhtml-content.xml")))
          (e (car (plist-get feed :entries))))
     (should (string-match-p "Hi there" (or (plist-get e :content) "")))))
 
 (ert-deftest synaxis-parse-test-atom-no-id-synthesises-source-id ()
-  (let* ((raw (synaxis-parse-tests--load "atom-no-id.xml"))
+  (let* ((raw (synaxis-tests--load-fixture "atom-no-id.xml"))
          (e1 (car (plist-get (synaxis-parse-string raw) :entries)))
          (e2 (car (plist-get (synaxis-parse-string raw) :entries))))
     (should (stringp (plist-get e1 :source-id)))
@@ -88,7 +79,7 @@
 
 (ert-deftest synaxis-parse-test-rss-2.0-minimal ()
   (let* ((feed (synaxis-parse-string
-                (synaxis-parse-tests--load "rss-2.0-minimal.xml")))
+                (synaxis-tests--load-fixture "rss-2.0-minimal.xml")))
          (e (car (plist-get feed :entries))))
     (should (eq 'rss (plist-get feed :type)))
     (should (equal "RSS Test" (plist-get feed :title)))
@@ -100,7 +91,7 @@
 
 (ert-deftest synaxis-parse-test-rss-2.0-prefers-content-encoded ()
   (let* ((feed (synaxis-parse-string
-                (synaxis-parse-tests--load "rss-2.0-content-encoded.xml")))
+                (synaxis-tests--load-fixture "rss-2.0-content-encoded.xml")))
          (e (car (plist-get feed :entries))))
     (should (string-match-p "Full HTML content" (or (plist-get e :content) "")))
     (should-not (string-match-p "short summary" (or (plist-get e :content) "")))))
@@ -109,7 +100,7 @@
 
 (ert-deftest synaxis-parse-test-rss-1.0-rdf ()
   (let* ((feed (synaxis-parse-string
-                (synaxis-parse-tests--load "rss-1.0-rdf.xml")))
+                (synaxis-tests--load-fixture "rss-1.0-rdf.xml")))
          (e (car (plist-get feed :entries))))
     (should (eq 'rss1 (plist-get feed :type)))
     (should (equal "RSS 1.0 Test" (plist-get feed :title)))
@@ -121,7 +112,7 @@
 
 (ert-deftest synaxis-parse-test-json-feed-1.1 ()
   (let* ((feed (synaxis-parse-string
-                (synaxis-parse-tests--load "json-feed-1.1.json")))
+                (synaxis-tests--load-fixture "json-feed-1.1.json")))
          (e (car (plist-get feed :entries))))
     (should (eq 'json (plist-get feed :type)))
     (should (equal "JSON Feed Test" (plist-get feed :title)))

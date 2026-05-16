@@ -12,20 +12,8 @@
 
 (load (expand-file-name "../lisp/synaxis-ol.el"
                         (file-name-directory (or load-file-name buffer-file-name))))
+(require 'synaxis-test-utils)
 
-(defmacro synaxis-ol-tests--with-tmp (&rest body)
-  "Run BODY with a fresh DB and a no-op display-buffer."
-  (declare (indent 0) (debug t))
-  `(let* ((dir (make-temp-file "synaxis-ol-test" t))
-          (synaxis-db-file (expand-file-name "test.db" dir))
-          (synaxis-testing t)
-          (synaxis-db--connection nil)
-          (display-buffer-alist '((".*" display-buffer-no-window))))
-     (unwind-protect
-         (progn ,@body)
-       (synaxis-db-close)
-       (when (file-directory-p dir)
-         (delete-directory dir t)))))
 
 (defun synaxis-ol-tests--seed-entry ()
   "Insert one feed + entry; return the entry id."
@@ -53,7 +41,7 @@
 ;;; Store-link
 
 (ert-deftest synaxis-ol-test-store-link-from-show-mode ()
-  (synaxis-ol-tests--with-tmp
+  (synaxis-tests--with-tmp
    (require 'synaxis-show)
    (let ((id (synaxis-ol-tests--seed-entry))
          (org-store-link-plist nil))
@@ -73,7 +61,7 @@
       (should-not org-store-link-plist))))
 
 (ert-deftest synaxis-ol-test-store-link-from-search-mode ()
-  (synaxis-ol-tests--with-tmp
+  (synaxis-tests--with-tmp
    (require 'synaxis-search)
    (let ((id (synaxis-ol-tests--seed-entry))
          (org-store-link-plist nil))
@@ -90,7 +78,7 @@
 
 (ert-deftest synaxis-ol-test-follow-known-link-opens-show ()
   (require 'synaxis-show)
-  (synaxis-ol-tests--with-tmp
+  (synaxis-tests--with-tmp
    (let* ((id (synaxis-ol-tests--seed-entry))
           (called-with nil))
      (cl-letf (((symbol-function 'synaxis-show-entry)
@@ -101,7 +89,7 @@
 
 (ert-deftest synaxis-ol-test-follow-unknown-link-falls-back-to-browse-url ()
   (require 'synaxis-show)
-  (synaxis-ol-tests--with-tmp
+  (synaxis-tests--with-tmp
    (synaxis-ol-tests--seed-entry)
    (let ((browsed nil))
      (cl-letf (((symbol-function 'browse-url)

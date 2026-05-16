@@ -10,6 +10,7 @@
 
 (load (expand-file-name "../lisp/synaxis-filter.el"
                         (file-name-directory (or load-file-name buffer-file-name))))
+(require 'synaxis-test-utils)
 
 ;;; Parse
 
@@ -264,21 +265,8 @@
 
 ;;; Completions
 
-(defmacro synaxis-filter-tests--with-tmp (&rest body)
-  "Run BODY with a fresh synaxis DB."
-  (declare (indent 0) (debug t))
-  `(let* ((dir (make-temp-file "synaxis-filter-test" t))
-          (synaxis-db-file (expand-file-name "test.db" dir))
-          (synaxis-testing t)
-          (synaxis-db--connection nil))
-     (unwind-protect
-         (progn ,@body)
-       (synaxis-db-close)
-       (when (file-directory-p dir)
-         (delete-directory dir t)))))
-
 (ert-deftest synaxis-filter-test-completions-include-static-prefixes ()
-  (synaxis-filter-tests--with-tmp
+  (synaxis-tests--with-tmp
    (let ((c (synaxis-filter-completions)))
      (should (member "tag:" c))
      (should (member "-tag:" c))
@@ -289,14 +277,14 @@
 
 (ert-deftest synaxis-filter-test-completions-pull-from-tags-registry ()
   "Registered tags appear in completion even when no entry carries them."
-  (synaxis-filter-tests--with-tmp
+  (synaxis-tests--with-tmp
    (let ((db (synaxis-db--ensure-open)))
      (sqlite-execute db "INSERT INTO tags (tag) VALUES (?);" '("orphan-tag")))
    (let ((c (synaxis-filter-completions)))
      (should (member "tag:orphan-tag" c)))))
 
 (ert-deftest synaxis-filter-test-completions-include-tag-values ()
-  (synaxis-filter-tests--with-tmp
+  (synaxis-tests--with-tmp
    (synaxis-db-add-feed "https://example.com/x")
    (let ((id (synaxis-db-upsert-entry
               '(:feed-url "https://example.com/x" :source-id "1"
@@ -310,7 +298,7 @@
      (should (member "-tag:starred" c)))))
 
 (ert-deftest synaxis-filter-test-completions-include-feed-titles ()
-  (synaxis-filter-tests--with-tmp
+  (synaxis-tests--with-tmp
    (synaxis-db-add-feed "https://example.com/a" '(:title "Alpha"))
    (synaxis-db-add-feed "https://example.com/b" '(:title "Bravo"))
    (let ((c (synaxis-filter-completions)))
@@ -319,7 +307,7 @@
      (should (member "-feed:Alpha" c)))))
 
 (ert-deftest synaxis-filter-test-completions-include-entry-titles ()
-  (synaxis-filter-tests--with-tmp
+  (synaxis-tests--with-tmp
    (synaxis-db-add-feed "https://example.com/x")
    (synaxis-db-upsert-entry '(:feed-url "https://example.com/x" :source-id "1"
                                         :title "Recent Post" :date 100.0))
@@ -329,7 +317,7 @@
      (should (member "title:\"Recent Post\"" c)))))
 
 (ert-deftest synaxis-filter-test-completions-respect-entry-title-limit ()
-  (synaxis-filter-tests--with-tmp
+  (synaxis-tests--with-tmp
    (synaxis-db-add-feed "https://example.com/x")
    (dotimes (i 50)
      (synaxis-db-upsert-entry
@@ -422,7 +410,7 @@
 
 (ert-deftest synaxis-filter-test-tag-rule-quoted-feed-tags-entry ()
   "A tag rule with a quoted multi-word feed title tags matching entries."
-  (synaxis-filter-tests--with-tmp
+  (synaxis-tests--with-tmp
    (require 'synaxis)
    (synaxis-db-add-feed "https://example.com/pm" '(:title "PubMed Trending"))
    (let ((id (synaxis-db-upsert-entry

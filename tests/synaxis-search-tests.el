@@ -10,34 +10,11 @@
 
 (load (expand-file-name "../lisp/synaxis-search.el"
                         (file-name-directory (or load-file-name buffer-file-name))))
-
-(defmacro synaxis-search-tests--with-tmp (&rest body)
-  "Run BODY with a fresh DB and a no-window display buffer."
-  (declare (indent 0) (debug t))
-  `(let* ((dir (make-temp-file "synaxis-search-test" t))
-          (synaxis-db-file (expand-file-name "test.db" dir))
-          (synaxis-testing t)
-          (synaxis-db--connection nil)
-          (display-buffer-alist '((".*" display-buffer-no-window))))
-     (unwind-protect
-         (progn ,@body)
-       (when (get-buffer "*synaxis*") (kill-buffer "*synaxis*"))
-       (synaxis-db-close)
-       (when (file-directory-p dir)
-         (delete-directory dir t)))))
-
-(defun synaxis-search-tests--add-entry (feed-url source-id title date &optional unread)
-  "Insert one entry and optionally tag it unread."
-  (synaxis-db-add-feed feed-url '(:title "F"))
-  (let ((id (synaxis-db-upsert-entry
-             (list :feed-url feed-url :source-id source-id
-                   :title title :date date))))
-    (when unread (synaxis-db-add-tag id "unread"))
-    id))
+(require 'synaxis-test-utils)
 
 (ert-deftest synaxis-search-test-entry-columns-include-date-and-title ()
-  (synaxis-search-tests--with-tmp
-   (let* ((id (synaxis-search-tests--add-entry
+  (synaxis-tests--with-tmp
+   (let* ((id (synaxis-tests--seed-entry
                "https://example.com/x" "1" "Hello world" 1704164645.0 t))
           (entry (synaxis-db-get-entry id))
           (cols (synaxis-search--entry-columns entry)))
@@ -46,17 +23,17 @@
      (should (string-match-p "Hello world" (aref cols 4))))))
 
 (ert-deftest synaxis-search-test-refresh-populates-tabulated-list ()
-  (synaxis-search-tests--with-tmp
-   (synaxis-search-tests--add-entry "https://example.com/x" "1" "A" 1.0 t)
-   (synaxis-search-tests--add-entry "https://example.com/x" "2" "B" 2.0 t)
+  (synaxis-tests--with-tmp
+   (synaxis-tests--seed-entry "https://example.com/x" "1" "A" 1.0 t)
+   (synaxis-tests--seed-entry "https://example.com/x" "2" "B" 2.0 t)
    (let ((synaxis-search-default-filter ""))
      (synaxis-search))
    (with-current-buffer "*synaxis*"
      (should (= 2 (length tabulated-list-entries))))))
 
 (ert-deftest synaxis-search-test-current-entry-returns-id-at-point ()
-  (synaxis-search-tests--with-tmp
-   (let ((id (synaxis-search-tests--add-entry
+  (synaxis-tests--with-tmp
+   (let ((id (synaxis-tests--seed-entry
               "https://example.com/x" "1" "Only" 1.0 t)))
      (let ((synaxis-search-default-filter ""))
        (synaxis-search))
@@ -65,8 +42,8 @@
        (should (equal id (synaxis-search-current-entry)))))))
 
 (ert-deftest synaxis-search-test-toggle-read-removes-unread-tag ()
-  (synaxis-search-tests--with-tmp
-   (let ((id (synaxis-search-tests--add-entry
+  (synaxis-tests--with-tmp
+   (let ((id (synaxis-tests--seed-entry
               "https://example.com/x" "1" "T" 1.0 t)))
      (let ((synaxis-search-default-filter ""))
        (synaxis-search))
@@ -79,8 +56,8 @@
        (should (member "unread" (synaxis-db-get-tags id)))))))
 
 (ert-deftest synaxis-search-test-set-filter-changes-buffer-local ()
-  (synaxis-search-tests--with-tmp
-   (synaxis-search-tests--add-entry "https://example.com/x" "1" "T" 1.0 t)
+  (synaxis-tests--with-tmp
+   (synaxis-tests--seed-entry "https://example.com/x" "1" "T" 1.0 t)
    (let ((synaxis-search-default-filter ""))
      (synaxis-search))
    (with-current-buffer "*synaxis*"
@@ -88,9 +65,9 @@
      (should (equal "tag:unread" synaxis-search--filter)))))
 
 (ert-deftest synaxis-search-test-default-filter-shows-unread-only ()
-  (synaxis-search-tests--with-tmp
-   (synaxis-search-tests--add-entry "https://example.com/x" "1" "Unread" 2.0 t)
-   (let ((id (synaxis-search-tests--add-entry
+  (synaxis-tests--with-tmp
+   (synaxis-tests--seed-entry "https://example.com/x" "1" "Unread" 2.0 t)
+   (let ((id (synaxis-tests--seed-entry
               "https://example.com/x" "2" "Read" 1.0 t)))
      (synaxis-db-remove-tag id "unread"))
    (synaxis-search)
@@ -101,8 +78,8 @@
        (should (equal '("Unread") titles))))))
 
 (ert-deftest synaxis-search-test-replace-entry-updates-row-in-place ()
-  (synaxis-search-tests--with-tmp
-   (let ((id (synaxis-search-tests--add-entry
+  (synaxis-tests--with-tmp
+   (let ((id (synaxis-tests--seed-entry
               "https://example.com/x" "1" "T" 1.0 t)))
      (let ((synaxis-search-default-filter ""))
        (synaxis-search))
@@ -117,8 +94,8 @@
 
 (ert-deftest synaxis-search-test-set-filter-via-completing-read-multiple ()
   "Calling `synaxis-search-set-filter' interactively pulls from CRM."
-  (synaxis-search-tests--with-tmp
-   (synaxis-search-tests--add-entry "https://example.com/x" "1" "T" 1.0 t)
+  (synaxis-tests--with-tmp
+   (synaxis-tests--seed-entry "https://example.com/x" "1" "T" 1.0 t)
    (let ((synaxis-search-default-filter ""))
      (synaxis-search))
    (with-current-buffer "*synaxis*"
@@ -128,8 +105,8 @@
      (should (equal "tag:starred feed:hackaday" synaxis-search--filter)))))
 
 (ert-deftest synaxis-search-test-tag-entry-uses-completing-read ()
-  (synaxis-search-tests--with-tmp
-   (let ((id (synaxis-search-tests--add-entry
+  (synaxis-tests--with-tmp
+   (let ((id (synaxis-tests--seed-entry
               "https://example.com/x" "1" "T" 1.0 t)))
      (let ((synaxis-search-default-filter ""))
        (synaxis-search))
@@ -141,8 +118,8 @@
        (should (member "starred" (synaxis-db-get-tags id)))))))
 
 (ert-deftest synaxis-search-test-untag-entry-uses-completing-read ()
-  (synaxis-search-tests--with-tmp
-   (let ((id (synaxis-search-tests--add-entry
+  (synaxis-tests--with-tmp
+   (let ((id (synaxis-tests--seed-entry
               "https://example.com/x" "1" "T" 1.0 t)))
      (synaxis-db-add-tag id "starred")
      (let ((synaxis-search-default-filter ""))
@@ -156,8 +133,8 @@
        (should (member "unread" (synaxis-db-get-tags id)))))))
 
 (ert-deftest synaxis-search-test-untag-entry-errors-when-no-tags ()
-  (synaxis-search-tests--with-tmp
-   (let ((id (synaxis-search-tests--add-entry
+  (synaxis-tests--with-tmp
+   (let ((id (synaxis-tests--seed-entry
               "https://example.com/x" "1" "T" 1.0 nil)))
      (ignore id)
      (let ((synaxis-search-default-filter ""))
@@ -168,10 +145,10 @@
                      :type 'user-error)))))
 
 (ert-deftest synaxis-search-test-mark-all-read-marks-visible-entries ()
-  (synaxis-search-tests--with-tmp
-   (let ((id1 (synaxis-search-tests--add-entry
+  (synaxis-tests--with-tmp
+   (let ((id1 (synaxis-tests--seed-entry
                "https://example.com/x" "1" "A" 1.0 t))
-         (id2 (synaxis-search-tests--add-entry
+         (id2 (synaxis-tests--seed-entry
                "https://example.com/x" "2" "B" 2.0 t)))
      (let ((synaxis-search-default-filter ""))
        (synaxis-search))
@@ -182,8 +159,8 @@
        (should-not (member "unread" (synaxis-db-get-tags id2)))))))
 
 (ert-deftest synaxis-search-test-mark-all-read-respects-cancel ()
-  (synaxis-search-tests--with-tmp
-   (let ((id (synaxis-search-tests--add-entry
+  (synaxis-tests--with-tmp
+   (let ((id (synaxis-tests--seed-entry
               "https://example.com/x" "1" "T" 1.0 t)))
      (let ((synaxis-search-default-filter ""))
        (synaxis-search))
@@ -193,7 +170,7 @@
        (should (member "unread" (synaxis-db-get-tags id)))))))
 
 (ert-deftest synaxis-search-test-mark-all-read-errors-when-empty ()
-  (synaxis-search-tests--with-tmp
+  (synaxis-tests--with-tmp
    (let ((synaxis-search-default-filter ""))
      (synaxis-search))
    (with-current-buffer "*synaxis*"
@@ -202,8 +179,8 @@
 
 (ert-deftest synaxis-search-test-entry-columns-renders-tags-excluding-unread ()
   "Tags cell shows other tags but omits `unread'."
-  (synaxis-search-tests--with-tmp
-   (let ((id (synaxis-search-tests--add-entry
+  (synaxis-tests--with-tmp
+   (let ((id (synaxis-tests--seed-entry
               "https://example.com/tg" "1" "T" 1.0 t)))
      (synaxis-db-add-tag id "starred")
      (let ((synaxis-search-default-filter ""))
@@ -216,8 +193,8 @@
 
 (ert-deftest synaxis-search-test-entry-columns-applies-tag-face ()
   "Tag face from the registry is applied to the rendered tag."
-  (synaxis-search-tests--with-tmp
-   (let ((id (synaxis-search-tests--add-entry
+  (synaxis-tests--with-tmp
+   (let ((id (synaxis-tests--seed-entry
               "https://example.com/face" "1" "T" 1.0 nil)))
      (synaxis-db-add-tag id "highlight")
      (synaxis-db-set-tag-face "highlight" 'warning)
@@ -235,8 +212,8 @@
   "Setting a tag face and refreshing picks up the change.
 Before set-tag-face the cell uses `synaxis-search-tag-face';
 after, it uses the registry override."
-  (synaxis-search-tests--with-tmp
-   (let ((id (synaxis-search-tests--add-entry
+  (synaxis-tests--with-tmp
+   (let ((id (synaxis-tests--seed-entry
               "https://example.com/r" "1" "T" 1.0 nil)))
      (synaxis-db-add-tag id "wip")
      (let ((synaxis-search-default-filter ""))
@@ -257,8 +234,8 @@ after, it uses the registry override."
          (should (eq 'success (get-text-property idx 'face cell))))))))
 
 (ert-deftest synaxis-search-test-edit-tags-adds-with-plus-prefix ()
-  (synaxis-search-tests--with-tmp
-    (let ((id (synaxis-search-tests--add-entry
+  (synaxis-tests--with-tmp
+    (let ((id (synaxis-tests--seed-entry
                "https://example.com/e" "1" "T" 1.0 nil)))
       (let ((synaxis-search-default-filter ""))
         (synaxis-search))
@@ -270,8 +247,8 @@ after, it uses the registry override."
         (should (member "rust" (synaxis-db-get-tags id)))))))
 
 (ert-deftest synaxis-search-test-edit-tags-removes-with-minus-prefix ()
-  (synaxis-search-tests--with-tmp
-    (let ((id (synaxis-search-tests--add-entry
+  (synaxis-tests--with-tmp
+    (let ((id (synaxis-tests--seed-entry
                "https://example.com/e" "1" "T" 1.0 t)))
       (synaxis-db-add-tag id "starred")
       (let ((synaxis-search-default-filter ""))
@@ -285,8 +262,8 @@ after, it uses the registry override."
         (should (member "unread" (synaxis-db-get-tags id)))))))
 
 (ert-deftest synaxis-search-test-edit-tags-mixed-add-and-remove ()
-  (synaxis-search-tests--with-tmp
-    (let ((id (synaxis-search-tests--add-entry
+  (synaxis-tests--with-tmp
+    (let ((id (synaxis-tests--seed-entry
                "https://example.com/e" "1" "T" 1.0 t)))
       (let ((synaxis-search-default-filter ""))
         (synaxis-search))
@@ -302,8 +279,8 @@ after, it uses the registry override."
 
 (ert-deftest synaxis-search-test-edit-tags-bare-name-adds ()
   "A bare typed name (no `+`/`-`) is treated as add."
-  (synaxis-search-tests--with-tmp
-    (let ((id (synaxis-search-tests--add-entry
+  (synaxis-tests--with-tmp
+    (let ((id (synaxis-tests--seed-entry
                "https://example.com/e" "1" "T" 1.0 nil)))
       (let ((synaxis-search-default-filter ""))
         (synaxis-search))
@@ -315,8 +292,8 @@ after, it uses the registry override."
         (should (member "fresh-tag" (synaxis-db-get-tags id)))))))
 
 (ert-deftest synaxis-search-test-edit-tags-empty-input-noop ()
-  (synaxis-search-tests--with-tmp
-    (let ((id (synaxis-search-tests--add-entry
+  (synaxis-tests--with-tmp
+    (let ((id (synaxis-tests--seed-entry
                "https://example.com/e" "1" "T" 1.0 t)))
       (let ((synaxis-search-default-filter ""))
         (synaxis-search))
@@ -328,8 +305,8 @@ after, it uses the registry override."
         (should (equal '("unread") (synaxis-db-get-tags id)))))))
 
 (ert-deftest synaxis-search-test-tag-candidates-marks-current-with-minus ()
-  (synaxis-search-tests--with-tmp
-    (let ((id (synaxis-search-tests--add-entry
+  (synaxis-tests--with-tmp
+    (let ((id (synaxis-tests--seed-entry
                "https://example.com/c" "1" "T" 1.0 t)))
       (synaxis-db-add-tag id "alpha")
       ;; Register an unattached tag too.
@@ -342,8 +319,8 @@ after, it uses the registry override."
 
 (ert-deftest synaxis-search-test-edit-feed-picks-row-url ()
   "`synaxis-search-edit-feed' passes the row's feed-url to the editor."
-  (synaxis-search-tests--with-tmp
-   (synaxis-search-tests--add-entry
+  (synaxis-tests--with-tmp
+   (synaxis-tests--seed-entry
     "https://example.com/ef" "1" "T" 1.0 t)
    (let ((synaxis-search-default-filter ""))
      (synaxis-search))
@@ -357,8 +334,8 @@ after, it uses the registry override."
 
 (ert-deftest synaxis-search-test-browse-entry-from-search-mode ()
   "`synaxis-search-browse-entry' opens the row's link via `browse-url'."
-  (synaxis-search-tests--with-tmp
-   (synaxis-search-tests--add-entry
+  (synaxis-tests--with-tmp
+   (synaxis-tests--seed-entry
     "https://example.com/b" "1" "T" 1.0 t)
    (synaxis-db-upsert-entry
     '(:feed-url "https://example.com/b" :source-id "1"
@@ -375,7 +352,7 @@ after, it uses the registry override."
 
 (ert-deftest synaxis-search-test-browse-entry-errors-without-row ()
   "Browse errors with `user-error' when no entry is at point."
-  (synaxis-search-tests--with-tmp
+  (synaxis-tests--with-tmp
    (with-temp-buffer
      (synaxis-search-mode)
      (should-error (synaxis-search-browse-entry) :type 'user-error))))

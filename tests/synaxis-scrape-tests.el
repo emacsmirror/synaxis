@@ -10,16 +10,12 @@
 
 (load (expand-file-name "../lisp/synaxis-scrape.el"
                         (file-name-directory (or load-file-name buffer-file-name))))
-
-(defconst synaxis-scrape-tests--fixtures-dir
-  (expand-file-name "fixtures"
-                    (file-name-directory (or load-file-name buffer-file-name))))
+(require 'synaxis-test-utils)
 
 (defun synaxis-scrape-tests--dom (name)
   "Parse fixture HTML NAME into a DOM."
   (with-temp-buffer
-    (insert-file-contents
-     (expand-file-name name synaxis-scrape-tests--fixtures-dir))
+    (insert (synaxis-tests--load-fixture name))
     (libxml-parse-html-region (point-min) (point-max))))
 
 (defun synaxis-scrape-tests--texts (nodes)
@@ -195,15 +191,9 @@ Also: a second empty span with the same class is skipped."
 
 ;;; Pure extraction
 
-(defun synaxis-scrape-tests--load (name)
-  (with-temp-buffer
-    (insert-file-contents
-     (expand-file-name name synaxis-scrape-tests--fixtures-dir))
-    (buffer-string)))
-
 (ert-deftest synaxis-scrape-test-extract-basic ()
   "Extracts 3 entries from the basic blog fixture."
-  (let* ((html (synaxis-scrape-tests--load "scrape-basic.html"))
+  (let* ((html (synaxis-tests--load-fixture "scrape-basic.html"))
          (entries (synaxis-scrape--extract
                    html "https://example.com/blog/"
                    '(:url-selector "h2.entry-title a"))))
@@ -215,7 +205,7 @@ Also: a second empty span with the same class is skipped."
                             (plist-get (car entries) :title)))))
 
 (ert-deftest synaxis-scrape-test-extract-applies-url-pattern ()
-  (let* ((html (synaxis-scrape-tests--load "scrape-basic.html"))
+  (let* ((html (synaxis-tests--load-fixture "scrape-basic.html"))
          (entries (synaxis-scrape--extract
                    html "https://example.com/blog/"
                    '(:url-selector "h2.entry-title a"
@@ -224,14 +214,14 @@ Also: a second empty span with the same class is skipped."
     (should (string-match-p "/post/2" (plist-get (car entries) :link)))))
 
 (ert-deftest synaxis-scrape-test-extract-applies-limit ()
-  (let* ((html (synaxis-scrape-tests--load "scrape-basic.html"))
+  (let* ((html (synaxis-tests--load-fixture "scrape-basic.html"))
          (entries (synaxis-scrape--extract
                    html "https://example.com/blog/"
                    '(:url-selector "h2.entry-title a" :limit 2))))
     (should (= 2 (length entries)))))
 
 (ert-deftest synaxis-scrape-test-extract-applies-title-cleanup ()
-  (let* ((html (synaxis-scrape-tests--load "scrape-basic.html"))
+  (let* ((html (synaxis-tests--load-fixture "scrape-basic.html"))
          (entries (synaxis-scrape--extract
                    html "https://example.com/blog/"
                    '(:url-selector "h2.entry-title a"
@@ -239,7 +229,7 @@ Also: a second empty span with the same class is skipped."
     (should (equal "First" (plist-get (car entries) :title)))))
 
 (ert-deftest synaxis-scrape-test-extract-resolves-relative-links ()
-  (let* ((html (synaxis-scrape-tests--load "scrape-basic.html"))
+  (let* ((html (synaxis-tests--load-fixture "scrape-basic.html"))
          (entries (synaxis-scrape--extract
                    html "https://example.com/blog/"
                    '(:url-selector "h2.entry-title a"))))
@@ -259,7 +249,7 @@ Also: a second empty span with the same class is skipped."
                    '(:url-selector ".x")))))))
 
 (ert-deftest synaxis-scrape-test-extract-empty-on-no-match ()
-  (let* ((html (synaxis-scrape-tests--load "scrape-basic.html")))
+  (let* ((html (synaxis-tests--load-fixture "scrape-basic.html")))
     (should (null (synaxis-scrape--extract
                    html "https://example.com/"
                    '(:url-selector ".nothing-matches"))))))
@@ -292,7 +282,7 @@ Also: a second empty span with the same class is skipped."
   (let* ((article-html (with-temp-buffer
                          (insert-file-contents
                           (expand-file-name "scrape-article.html"
-                                            synaxis-scrape-tests--fixtures-dir))
+                                            synaxis-tests--fixtures-dir))
                          (buffer-string)))
          (entries (list (list :link "https://example.com/p/1"
                               :title "T" :date 1.0)))
@@ -344,7 +334,7 @@ Also: a second empty span with the same class is skipped."
          (html (with-temp-buffer
                  (insert-file-contents
                   (expand-file-name "scrape-basic.html"
-                                    synaxis-scrape-tests--fixtures-dir))
+                                    synaxis-tests--fixtures-dir))
                  (buffer-string))))
     (unwind-protect
         (progn
@@ -375,7 +365,7 @@ Also: a second empty span with the same class is skipped."
          (html (with-temp-buffer
                  (insert-file-contents
                   (expand-file-name "scrape-basic.html"
-                                    synaxis-scrape-tests--fixtures-dir))
+                                    synaxis-tests--fixtures-dir))
                  (buffer-string))))
     (unwind-protect
         (progn
@@ -406,7 +396,7 @@ Also: a second empty span with the same class is skipped."
          (html (with-temp-buffer
                  (insert-file-contents
                   (expand-file-name "scrape-basic.html"
-                                    synaxis-scrape-tests--fixtures-dir))
+                                    synaxis-tests--fixtures-dir))
                  (buffer-string))))
     (unwind-protect
         (progn

@@ -10,22 +10,7 @@
 
 (load (expand-file-name "../lisp/synaxis.el"
                         (file-name-directory (or load-file-name buffer-file-name))))
-
-(defmacro synaxis-tests--with-tmp (&rest body)
-  "Run BODY with a fresh DB, cleaned-up timer, and isolated interval."
-  (declare (indent 0) (debug t))
-  `(let* ((dir (make-temp-file "synaxis-test" t))
-          (synaxis-db-file (expand-file-name "test.db" dir))
-          (synaxis-testing t)
-          (synaxis-db--connection nil)
-          (synaxis-update-interval nil)
-          (synaxis--update-timer nil))
-     (unwind-protect
-         (progn ,@body)
-       (synaxis--update-cancel-timer)
-       (synaxis-db-close)
-       (when (file-directory-p dir)
-         (delete-directory dir t)))))
+(require 'synaxis-test-utils)
 
 ;;; Update timer
 
@@ -90,15 +75,6 @@
        (should (= 1 calls))))))
 
 ;;; Tag rules
-
-(defun synaxis-tests--seed-entry (feed-url source-id title date &optional unread)
-  "Insert a feed + entry, optionally tagged unread.  Returns the entry id."
-  (synaxis-db-add-feed feed-url '(:title "F"))
-  (let ((id (synaxis-db-upsert-entry
-             (list :feed-url feed-url :source-id source-id
-                   :title title :date date))))
-    (when unread (synaxis-db-add-tag id "unread"))
-    id))
 
 (ert-deftest synaxis-test-rules-apply-entry-adds-tag-when-filter-matches ()
   (synaxis-tests--with-tmp
