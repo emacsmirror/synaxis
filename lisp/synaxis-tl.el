@@ -44,6 +44,15 @@
 
 (require 'tabulated-list)
 (require 'cl-lib)
+(require 'keymap-popup)
+
+;;; Shared list keymap
+
+(keymap-popup-define synaxis-tl-list-mode-map
+  "Shared bindings for all synaxis tabulated-list views."
+  :parent tabulated-list-mode-map
+  :group "Navigate"
+  "S" ("Sort" synaxis-tl-sort))
 
 (defvar synaxis-tl-ellipsis "..."
   "String appended to truncated column text.")
@@ -267,7 +276,7 @@ same entry ID and column."
     (let ((inhibit-modification-hooks t))
       (erase-buffer)
       (synaxis-tl--render-into-buffer entries tabulated-list-format
-                                     (or tabulated-list-padding 0)))
+                                      (or tabulated-list-padding 0)))
     (set-buffer-modified-p nil)
     (if (and saved-id remember-pos)
         (progn
@@ -361,7 +370,7 @@ Assumes `tabulated-list-format' and `tabulated-list-padding' are set."
     (save-excursion
       (goto-char (point-max))
       (synaxis-tl--render-into-buffer entries tabulated-list-format
-                                     (or tabulated-list-padding 0)))))
+                                      (or tabulated-list-padding 0)))))
 
 (provide 'synaxis-tl)
 ;;; synaxis-tl.el ends here
