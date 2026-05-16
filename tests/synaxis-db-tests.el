@@ -393,6 +393,21 @@
   (synaxis-db-tests--with-tmp
    (should-not (synaxis-db-bulk-add-tag nil "foo"))))
 
+(ert-deftest synaxis-db-test-bulk-add-tag-survives-large-batch ()
+  "Bulk-add of >chunk-size ids still tags every entry."
+  (synaxis-db-tests--with-tmp
+   (synaxis-db-add-feed "https://example.com/big")
+   ;; Pretend the parameter limit is tiny so we exercise the chunking loop.
+   (let ((synaxis-db--max-vars 8))
+     (let ((ids (cl-loop for i below 50
+                         collect (synaxis-db-upsert-entry
+                                  `(:feed-url "https://example.com/big"
+                                              :source-id ,(format "%d" i)
+                                              :title "T" :date ,(float i))))))
+       (synaxis-db-bulk-add-tag ids "mass")
+       (dolist (id ids)
+         (should (member "mass" (synaxis-db-get-tags id))))))))
+
 (ert-deftest synaxis-db-test-bulk-remove-tag ()
   "Bulk-remove-tag clears TAG only from the listed ids."
   (synaxis-db-tests--with-tmp
