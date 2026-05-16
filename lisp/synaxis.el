@@ -48,6 +48,7 @@
 
 (require 'synaxis-db)
 (require 'synaxis-fetch)
+(require 'synaxis-filter)
 (require 'synaxis-search)
 (require 'synaxis-show)
 
@@ -90,6 +91,113 @@ idempotent."
           (run-with-timer synaxis-update-interval
                           synaxis-update-interval
                           #'synaxis--update-background))))
+
+;;; Tag rules
+
+(defcustom synaxis-tag-rules nil
+  "Rules auto-applied to entries on insert and via `synaxis-tag-rules-apply-all'.
+Each rule is a plist with keys:
+  :filter STRING -- filter expression (see `synaxis-filter-parse')
+  :add    LIST   -- tag strings to add to matching entries (optional)
+  :remove LIST   -- tag strings to remove from matching entries (optional)
+
+Rules fire on every fresh entry insert via `synaxis-new-entry-hook'.
+Run `synaxis-tag-rules-apply-all' to back-apply across the whole DB.
+
+Example:
+  (setq synaxis-tag-rules
+        \\='((:filter \"feed:hackaday\" :add (\"hardware\"))
+          (:filter \"feed:promo\"    :remove (\"unread\"))
+          (:filter \"title:rust\"    :add (\"rust\") :remove (\"later\"))))"
+  :type '(repeat (plist :options
+                        ((:filter (string :tag "Filter"))
+                         (:add    (repeat (string :tag "Tag to add")))
+                         (:remove (repeat (string :tag "Tag to remove"))))))
+  :group 'synaxis)
+
+(defun synaxis-tag-rules--matching-ids (filter)
+  "Return ids of entries matching FILTER, or nil."
+  (let* ((c      (synaxis-filter-compile (synaxis-filter-parse filter)))
+         (where  (plist-get c :where))
+         (params (plist-get c :params))
+         (db     (synaxis-db--ensure-open))
+         (sql    (concat "SELECT e.id FROM entries e
+                          JOIN feeds f ON f.url = e.feed_url
+                          WHERE " where ";")))
+    (mapcar #'car (sqlite-select db sql params))))
+
+(defun synaxis-tag-rules--rule-matches-entry-p (rule entry-id)
+  "Non-nil if RULE's :filter matches ENTRY-ID."
+  (let* ((c      (synaxis-filter-compile
+                  (synaxis-filter-parse (plist-get rule :filter))))
+         (where  (plist-get c :where))
+         (params (plist-get c :params))
+         (db     (synaxis-db--ensure-open))
+         (sql    (concat "SELECT 1 FROM entries e
+                          JOIN feeds f ON f.url = e.feed_url
+                          WHERE (" where ") AND e.id = ?
+                          LIMIT 1;")))
+    (sqlite-select db sql (append params (list entry-id)))))
+
+(defun synaxis-tag-rules-apply-entry (entry-id)
+  "Apply each rule in `synaxis-tag-rules' to ENTRY-ID."
+  (dolist (rule synaxis-tag-rules)
+    (let ((add    (plist-get rule :add))
+          (remove (plist-get rule :remove)))
+      (when (and (or add remove)
+                 (synaxis-tag-rules--rule-matches-entry-p rule entry-id))
+        (dolist (tag add)    (synaxis-db-add-tag    entry-id tag))
+        (dolist (tag remove) (synaxis-db-remove-tag entry-id tag))))))
+
+(defun synaxis-tag-rules-apply-all ()
+  "Apply every rule in `synaxis-tag-rules' across all entries.
+Re-adds any :add tag previously removed by hand on matching entries."
+  (interactive)
+  (unless synaxis-tag-rules (user-error "No rules in synaxis-tag-rules"))
+  (when (y-or-n-p
+         (format "Apply %d rules across ALL entries? \
+This will re-add tags removed by hand on matching entries.  Continue? "
+                 (length synaxis-tag-rules)))
+    (dolist (rule synaxis-tag-rules)
+      (let ((add    (plist-get rule :add))
+            (remove (plist-get rule :remove)))
+        (when (or add remove)
+          (let ((ids (synaxis-tag-rules--matching-ids
+                      (plist-get rule :filter))))
+            (dolist (tag add)    (synaxis-db-bulk-add-tag    ids tag))
+            (dolist (tag remove) (synaxis-db-bulk-remove-tag ids tag))))))
+    (message "synaxis: applied %d rules" (length synaxis-tag-rules))))
+
+(defun synaxis-tag-rules-test (filter)
+  "Show how many entries match FILTER plus a small sample.
+Read-only; no tags are changed."
+  (interactive (list (read-string "Test filter: ")))
+  (let* ((c      (synaxis-filter-compile (synaxis-filter-parse filter)))
+         (where  (plist-get c :where))
+         (params (plist-get c :params))
+         (db     (synaxis-db--ensure-open))
+         (count  (caar (sqlite-select
+                        db
+                        (concat "SELECT COUNT(*) FROM entries e
+                                 JOIN feeds f ON f.url = e.feed_url
+                                 WHERE " where ";")
+                        params)))
+         (sample (mapcar #'car
+                         (sqlite-select
+                          db
+                          (concat "SELECT e.title FROM entries e
+                                   JOIN feeds f ON f.url = e.feed_url
+                                   WHERE " where "
+                                   ORDER BY e.date DESC LIMIT 5;")
+                          params))))
+    (message "synaxis: %d match%s%s"
+             count
+             (if (= count 1) "" "es")
+             (if sample (concat ": " (string-join sample "; ")) ""))))
+
+;; Wire rules into the new-entry hook.  Safe when synaxis-tag-rules is nil
+;; (apply-entry simply does nothing).
+(add-hook 'synaxis-new-entry-hook #'synaxis-tag-rules-apply-entry)
 
 ;;; Completing-read wrapper
 
