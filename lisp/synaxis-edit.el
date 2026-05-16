@@ -66,11 +66,13 @@ and cleared by `synaxis-edit-quit'.")
 ;;; Field formatters
 
 (defun synaxis-edit--field-line (label value)
-  "Format LABEL = propertized VALUE for popup descriptions."
+  "Format LABEL = propertized VALUE for popup descriptions.
+Whitespace on both sides of VALUE is trimmed for display only; the
+underlying stored value is untouched."
   (format "%-18s %s"
           label
           (if value
-              (propertize (format "%s" value)
+              (propertize (string-trim (format "%s" value))
                           'face 'font-lock-constant-face)
             (propertize "(unset)" 'face 'shadow))))
 
@@ -199,7 +201,7 @@ and cleared by `synaxis-edit-quit'.")
   (lambda ()
     (if synaxis-edit--current-url
         (format "Edit %s"
-                (propertize synaxis-edit--current-url
+                (propertize (string-trim synaxis-edit--current-url)
                             'face 'font-lock-string-face))
       "Edit (no feed selected)"))
 
