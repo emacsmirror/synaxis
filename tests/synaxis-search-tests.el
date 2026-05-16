@@ -340,5 +340,20 @@ after, it uses the registry override."
         (should (member "-unread" cands))
         (should (member "+beta"   cands))))))
 
+(ert-deftest synaxis-search-test-edit-feed-picks-row-url ()
+  "`synaxis-search-edit-feed' passes the row's feed-url to the editor."
+  (synaxis-search-tests--with-tmp
+   (synaxis-search-tests--add-entry
+    "https://example.com/ef" "1" "T" 1.0 t)
+   (let ((synaxis-search-default-filter ""))
+     (synaxis-search))
+   (with-current-buffer "*synaxis*"
+     (goto-char (point-min))
+     (let (captured)
+       (cl-letf (((symbol-function 'synaxis-edit-feed)
+                  (lambda (&optional url) (setq captured url))))
+         (call-interactively 'synaxis-search-edit-feed))
+       (should (equal "https://example.com/ef" captured))))))
+
 (provide 'synaxis-search-tests)
 ;;; synaxis-search-tests.el ends here
