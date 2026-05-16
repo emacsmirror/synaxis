@@ -63,7 +63,7 @@ Bound around `url-queue-retrieve' as `url-queue-parallel-processes'."
       (let* ((sigil (aref token i))
              (start (1+ i))
              (end (or (string-match "[.#]" token start) len)))
-        (pcase sigil
+        (pcase-exhaustive sigil
           (?. (push (substring token start end) classes))
           (?# (setq id (substring token start end))))
         (setq i end)))
@@ -143,7 +143,7 @@ COMBINATOR is `descendant', `child', or nil for the last token."
 
 (defun synaxis-scrape--match-from (ast roots)
   "Return list of nodes matching AST starting from ROOTS list."
-  (pcase (car ast)
+  (pcase-exhaustive (car ast)
     ('simple
      (cl-loop for root in roots
               when (synaxis-scrape--match-simple ast root)
