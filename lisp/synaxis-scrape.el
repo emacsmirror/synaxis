@@ -238,14 +238,16 @@ the timezone from the decoded time when present (e.g. trailing
                                 (decoded-time-zone decoded)))))
          (error nil))))
 
+(defun synaxis-scrape--children-text (node)
+  "Concatenate NODE's direct string children, trimmed.  Empty when NODE is nil."
+  (if node
+      (string-trim (string-join (seq-filter #'stringp (dom-children node))))
+    ""))
+
 (defun synaxis-scrape--node-date (node)
   "Return float-time from NODE's `datetime' attribute or text content."
   (or (synaxis-scrape--parse-time-loose (dom-attr node 'datetime))
-      (synaxis-scrape--parse-time-loose
-       (string-trim (or (and node (mapconcat
-                                   (lambda (c) (if (stringp c) c ""))
-                                   (dom-children node) ""))
-                        "")))))
+      (synaxis-scrape--parse-time-loose (synaxis-scrape--children-text node))))
 
 (defun synaxis-scrape--extract-date (dom selector)
   "Extract a float-time from DOM using SELECTOR string.
@@ -287,9 +289,7 @@ the first `a' inside.  Returns nil if no anchor is found."
                     node
                   (car (dom-by-tag node 'a)))))
     (and anchor
-         (cons (string-trim
-                (mapconcat (lambda (c) (if (stringp c) c ""))
-                           (dom-children anchor) ""))
+         (cons (synaxis-scrape--children-text anchor)
                (dom-attr anchor 'href)))))
 
 (defun synaxis-scrape--node-html (node)
@@ -366,10 +366,7 @@ Pure: no HTTP, no DB.  Returns a list of entry plists."
                 (insert html)
                 (libxml-parse-html-region (point-min) (point-max))))
          (title-node (car (dom-by-tag dom 'title)))
-         (raw (and title-node
-                   (string-trim
-                    (mapconcat (lambda (c) (if (stringp c) c ""))
-                               (dom-children title-node) "")))))
+         (raw (and title-node (synaxis-scrape--children-text title-node))))
     (synaxis-scrape--strip-title raw (plist-get rules :title-cleanup))))
 
 ;;; Async per-article expansion
