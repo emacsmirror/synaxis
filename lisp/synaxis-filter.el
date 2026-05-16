@@ -295,11 +295,12 @@ If TOK has no `:', treat as bare word (or drop when NEGATED)."
   "Static completion strings independent of DB state.")
 
 (defun synaxis-filter--db-tags ()
-  "Return the list of distinct tag strings in the database."
+  "Return the list of registered tag strings, alphabetically.
+Reads from the `tags' registry (schema v2+); no DISTINCT scan."
   (let ((db (synaxis-db--ensure-open)))
     (mapcar #'car
             (sqlite-select
-             db "SELECT DISTINCT tag FROM entry_tags ORDER BY tag;"))))
+             db "SELECT tag FROM tags ORDER BY tag COLLATE NOCASE;"))))
 
 (defun synaxis-filter--db-feed-titles ()
   "Return the list of non-empty feed titles in the database."
