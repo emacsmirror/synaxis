@@ -209,16 +209,26 @@ is resolved (nil leaves the raw href in place)."
                   :date date)
             cplist)))
 
+(defun synaxis-parse--xml-base (node parent-base)
+  "Return NODE's effective xml:base resolved against PARENT-BASE.
+Falls back to PARENT-BASE when the attribute is absent."
+  (let ((attr (dom-attr node 'xml:base)))
+    (or (synaxis-parse--resolve-url parent-base attr)
+        parent-base)))
+
 (defun synaxis-parse--from-atom (dom &optional feed-url)
   "Parse DOM as an Atom 1.0 feed.
 FEED-URL is the absolute URL of the feed itself; entry links are
-resolved against it."
-  (list :type 'atom
-        :title (synaxis-parse--text-node (car (dom-by-tag dom 'title)))
-        :entries (synaxis-parse--ensure-source-ids
-                  (cl-loop for entry in (dom-by-tag dom 'entry)
-                           collect (synaxis-parse--atom-entry entry feed-url))
-                  feed-url)))
+resolved against it.  A feed-level or entry-level `xml:base'
+attribute, if present, layers on top per RFC 4287 section 4."
+  (let ((feed-base (synaxis-parse--xml-base dom feed-url)))
+    (list :type 'atom
+          :title (synaxis-parse--text-node (car (dom-by-tag dom 'title)))
+          :entries (synaxis-parse--ensure-source-ids
+                    (cl-loop for entry in (dom-by-tag dom 'entry)
+                             for base = (synaxis-parse--xml-base entry feed-base)
+                             collect (synaxis-parse--atom-entry entry base))
+                    feed-url))))
 
 ;;; RSS 2.0 adapter
 
