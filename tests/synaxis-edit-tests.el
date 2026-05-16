@@ -47,12 +47,12 @@
      (synaxis-db-add-feed "https://example.com/rss" '(:type "rss"))
      (should-not (synaxis-edit--scrape-feed-p)))))
 
-(ert-deftest synaxis-edit-test-has-content-selector-p ()
+(ert-deftest synaxis-edit-test-has-rule-p ()
   (synaxis-edit-tests--with-tmp
-   (should (synaxis-edit--has-content-selector-p))
+   (should (synaxis-edit--has-rule-p :content-selector))
    (synaxis-db-update-scrape-rule-field
     "https://example.com/sc" :content-selector nil)
-   (should-not (synaxis-edit--has-content-selector-p))))
+   (should-not (synaxis-edit--has-rule-p :content-selector))))
 
 ;;; Formatters
 
