@@ -66,10 +66,10 @@ and cleared by `synaxis-edit-quit'.")
 ;;; Field formatters
 
 (defun synaxis-edit--field-line (label value)
-  "Format LABEL = propertized VALUE for popup descriptions.
+  "Format LABEL: VALUE for popup descriptions.
 Whitespace on both sides of VALUE is trimmed for display only; the
 underlying stored value is untouched."
-  (format "%-18s %s"
+  (format "%s: %s"
           label
           (if value
               (propertize (string-trim (format "%s" value))
