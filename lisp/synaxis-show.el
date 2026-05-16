@@ -94,20 +94,19 @@ press `g' on the list buffer and reopen to refresh.")
   "Keymap for `synaxis-show-mode'."
   :description
   (lambda ()
-    (with-current-buffer (or (get-buffer "*synaxis-show*") (current-buffer))
-      (if-let* ((id synaxis-show--entry-id)
-                (entry (synaxis-db-get-entry id)))
-          (let* ((title (or (plist-get entry :title) "(untitled)"))
-                 (feed  (or (plist-get entry :feed-title) ""))
-                 (idx (or (and-let* ((peers synaxis-show--peers)
-                                     (pos (cl-position id peers)))
-                            (format " [%d/%d]" (1+ pos) (length peers)))
-                          "")))
-            (format "%s%s: %s"
-                    (propertize feed 'face 'font-lock-type-face)
-                    idx
-                    (propertize title 'face 'font-lock-keyword-face)))
-        "synaxis-show (no entry)")))
+    (if-let* ((id synaxis-show--entry-id)
+              (entry (synaxis-db-get-entry id)))
+        (let* ((title (or (plist-get entry :title) "(untitled)"))
+               (feed  (or (plist-get entry :feed-title) ""))
+               (idx (or (and-let* ((peers synaxis-show--peers)
+                                   (pos (cl-position id peers)))
+                          (format " [%d/%d]" (1+ pos) (length peers)))
+                        "")))
+          (format "%s%s: %s"
+                  (propertize feed 'face 'font-lock-type-face)
+                  idx
+                  (propertize title 'face 'font-lock-keyword-face)))
+      "synaxis-show (no entry)"))
   :group "Navigate"
   "n" ("Next entry"     synaxis-show-next-entry)
   "p" ("Previous entry" synaxis-show-prev-entry)
@@ -188,12 +187,10 @@ is filtered out after refresh, point stays where the refresh landed."
 DELTA is +1 (next) or -1 (previous).  Errors at the ends or when
 the buffer has no recorded peers.  After navigating, refreshes the
 originating `*synaxis*' buffer and lands point on the new entry."
-  (unless synaxis-show--peers
-    (user-error "Not in a navigable view"))
-  (let* ((peers  synaxis-show--peers)
-         (pos    (cl-position synaxis-show--entry-id peers))
-         (target (and pos (+ pos delta))))
-    (unless (and target (<= 0 target) (< target (length peers)))
+  (let* ((peers (or synaxis-show--peers
+                    (user-error "Not in a navigable view")))
+         (target (+ (cl-position synaxis-show--entry-id peers) delta)))
+    (unless (and (<= 0 target) (< target (length peers)))
       (user-error "No more entries"))
     (let ((new-id (nth target peers)))
       (synaxis-show-entry new-id peers)
