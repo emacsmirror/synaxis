@@ -205,11 +205,38 @@ If TOK has no `:', treat as bare word (or drop when NEGATED)."
     (synaxis-filter--classify-prefixed (substring tok 1) t))
    (t (synaxis-filter--classify-prefixed tok nil))))
 
+(defun synaxis-filter--tokenize (s)
+  "Split S into tokens, respecting double-quoted segments.
+Whitespace inside `\"...\"' is preserved.  `\\\"' inside a quoted
+segment becomes a literal `\"'.  Empty tokens are dropped.  An
+unmatched opening quote is treated as if closed at end-of-string."
+  (named-let walk ((i 0) (in-quote nil) (cur nil) (out nil))
+    (let ((flush (lambda (acc xs)
+                   (let ((tok (and acc (apply #'string (nreverse acc)))))
+                     (if (and tok (not (string-empty-p tok)))
+                         (cons tok xs)
+                       xs)))))
+      (cond
+       ((>= i (length s))
+        (nreverse (funcall flush cur out)))
+       ((and in-quote (eq (aref s i) ?\\)
+             (< (1+ i) (length s))
+             (eq (aref s (1+ i)) ?\"))
+        (walk (+ i 2) t (cons ?\" cur) out))
+       ((eq (aref s i) ?\")
+        (walk (1+ i) (not in-quote) cur out))
+       ((and (not in-quote) (memq (aref s i) '(?\s ?\t ?\n)))
+        (walk (1+ i) nil nil (funcall flush cur out)))
+       (t
+        (walk (1+ i) in-quote (cons (aref s i) cur) out))))))
+
 (defun synaxis-filter-parse (s)
-  "Tokenise filter string S into a list of token cells."
+  "Tokenise filter string S into a list of token cells.
+Double-quoted segments are taken as literal values; whitespace
+inside quotes is preserved.  See `synaxis-filter--tokenize'."
   (delq nil
         (mapcar #'synaxis-filter--classify
-                (split-string (or s "") "[ \t\n]+" t))))
+                (synaxis-filter--tokenize (or s "")))))
 
 ;;; Compiler
 
@@ -307,9 +334,17 @@ Reads from the `tags' registry (schema v2+); no DISTINCT scan."
                  ORDER BY date DESC LIMIT ?;"
              (list limit)))))
 
+(defun synaxis-filter--quote-if-needed (s)
+  "Wrap S in double quotes when it contains whitespace."
+  (if (and (stringp s) (string-match-p "[ \t]" s))
+      (format "\"%s\"" s)
+    s))
+
 (defun synaxis-filter--prefix-each (prefix values)
-  "Return VALUES with PREFIX prepended to each."
-  (mapcar (lambda (v) (concat prefix v)) values))
+  "Return VALUES with PREFIX prepended, quoting whitespace-containing items."
+  (mapcar (lambda (v)
+            (concat prefix (synaxis-filter--quote-if-needed v)))
+          values))
 
 (defun synaxis-filter-completions ()
   "Return a list of completion candidate strings for the filter prompt."
