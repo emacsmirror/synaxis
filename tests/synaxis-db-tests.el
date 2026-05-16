@@ -337,6 +337,88 @@
      (should-not (synaxis-db-get-entry id))
      (should-not (synaxis-db-get-tags id)))))
 
+;;; Tag registry CRUD
+
+(ert-deftest synaxis-db-test-list-tags-returns-registry ()
+  (synaxis-db-tests--with-tmp
+   (synaxis-db-add-feed "https://example.com/r")
+   (let ((id (synaxis-db-upsert-entry
+              '(:feed-url "https://example.com/r" :source-id "1"
+                          :title "T" :date 1.0))))
+     (synaxis-db-add-tag id "unread")
+     (synaxis-db-add-tag id "rust"))
+   (let* ((rows (synaxis-db-list-tags))
+          (by-tag (mapcar (lambda (r) (cons (plist-get r :tag) r)) rows)))
+     (should (assoc "rust" by-tag))
+     (should (assoc "unread" by-tag))
+     (should (plist-get (cdr (assoc "unread" by-tag)) :system))
+     (should-not (plist-get (cdr (assoc "rust" by-tag)) :system)))))
+
+(ert-deftest synaxis-db-test-rename-tag-no-conflict-uses-cascade ()
+  (synaxis-db-tests--with-tmp
+   (synaxis-db-add-feed "https://example.com/rn")
+   (let ((id (synaxis-db-upsert-entry
+              '(:feed-url "https://example.com/rn" :source-id "1"
+                          :title "T" :date 1.0))))
+     (synaxis-db-add-tag id "rust")
+     (synaxis-db-rename-tag "rust" "Rust")
+     (should (member "Rust" (synaxis-db-get-tags id)))
+     (should-not (member "rust" (synaxis-db-get-tags id))))))
+
+(ert-deftest synaxis-db-test-rename-tag-merges-on-conflict ()
+  "Renaming OLD to an existing NEW merges memberships and removes OLD."
+  (synaxis-db-tests--with-tmp
+   (synaxis-db-add-feed "https://example.com/m")
+   (let ((id1 (synaxis-db-upsert-entry
+               '(:feed-url "https://example.com/m" :source-id "1"
+                           :title "T" :date 1.0)))
+         (id2 (synaxis-db-upsert-entry
+               '(:feed-url "https://example.com/m" :source-id "2"
+                           :title "T" :date 2.0))))
+     (synaxis-db-add-tag id1 "alpha")
+     (synaxis-db-add-tag id2 "beta")
+     ;; id2 already tagged beta; renaming alpha -> beta merges.
+     (synaxis-db-rename-tag "alpha" "beta")
+     (should (member "beta" (synaxis-db-get-tags id1)))
+     (should (member "beta" (synaxis-db-get-tags id2)))
+     (should-not (member "alpha" (synaxis-db-get-tags id1)))
+     (let ((tags (mapcar (lambda (r) (plist-get r :tag))
+                         (synaxis-db-list-tags))))
+       (should (member "beta" tags))
+       (should-not (member "alpha" tags))))))
+
+(ert-deftest synaxis-db-test-rename-tag-rejects-empty ()
+  (synaxis-db-tests--with-tmp
+   (should-error (synaxis-db-rename-tag "" "new")  :type 'user-error)
+   (should-error (synaxis-db-rename-tag "old" "")  :type 'user-error)
+   (should-error (synaxis-db-rename-tag "x" "x")   :type 'user-error)))
+
+(ert-deftest synaxis-db-test-delete-tag-cascades-to-entry-tags ()
+  (synaxis-db-tests--with-tmp
+   (synaxis-db-add-feed "https://example.com/del")
+   (let ((id (synaxis-db-upsert-entry
+              '(:feed-url "https://example.com/del" :source-id "1"
+                          :title "T" :date 1.0))))
+     (synaxis-db-add-tag id "doomed")
+     (synaxis-db-delete-tag "doomed")
+     (should-not (member "doomed" (synaxis-db-get-tags id))))))
+
+(ert-deftest synaxis-db-test-set-tag-face-round-trips ()
+  (synaxis-db-tests--with-tmp
+   (synaxis-db-add-feed "https://example.com/f")
+   (let ((id (synaxis-db-upsert-entry
+              '(:feed-url "https://example.com/f" :source-id "1"
+                          :title "T" :date 1.0))))
+     (synaxis-db-add-tag id "x"))
+   (synaxis-db-set-tag-face "x" 'warning)
+   (let ((entry (cl-find "x" (synaxis-db-list-tags)
+                         :test (lambda (a b) (equal a (plist-get b :tag))))))
+     (should (equal "warning" (plist-get entry :face))))
+   (synaxis-db-set-tag-face "x" nil)
+   (let ((entry (cl-find "x" (synaxis-db-list-tags)
+                         :test (lambda (a b) (equal a (plist-get b :tag))))))
+     (should (null (plist-get entry :face))))))
+
 ;;; Tags
 
 (ert-deftest synaxis-db-test-add-tag-idempotent ()

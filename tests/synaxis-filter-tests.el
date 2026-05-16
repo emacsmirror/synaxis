@@ -287,6 +287,14 @@
      (should (member "date:today" c))
      (should (member "date:thisweek" c)))))
 
+(ert-deftest synaxis-filter-test-completions-pull-from-tags-registry ()
+  "Registered tags appear in completion even when no entry carries them."
+  (synaxis-filter-tests--with-tmp
+   (let ((db (synaxis-db--ensure-open)))
+     (sqlite-execute db "INSERT INTO tags (tag) VALUES (?);" '("orphan-tag")))
+   (let ((c (synaxis-filter-completions)))
+     (should (member "tag:orphan-tag" c)))))
+
 (ert-deftest synaxis-filter-test-completions-include-tag-values ()
   (synaxis-filter-tests--with-tmp
    (synaxis-db-add-feed "https://example.com/x")
