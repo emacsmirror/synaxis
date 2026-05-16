@@ -257,5 +257,14 @@
        (kill-buffer buf))
      (should (= 1 (length calls))))))
 
+(ert-deftest synaxis-fetch-test-feed-binds-http-request-headers ()
+  "`synaxis-fetch-feed' let-binds `url-request-extra-headers'."
+  (synaxis-fetch-tests--with-tmp
+   (let (captured)
+     (cl-letf (((symbol-function 'url-queue-retrieve)
+                (lambda (&rest _) (setq captured url-request-extra-headers))))
+       (synaxis-fetch-feed "https://example.com/x"))
+     (should (equal synaxis-http-request-headers captured)))))
+
 (provide 'synaxis-fetch-tests)
 ;;; synaxis-fetch-tests.el ends here
