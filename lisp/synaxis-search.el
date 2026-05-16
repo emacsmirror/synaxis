@@ -47,9 +47,11 @@ See `synaxis-filter-parse' for the syntax."
   :type 'string
   :group 'synaxis)
 
-(defcustom synaxis-search-default-limit 200
-  "Maximum number of entries shown in the list buffer."
-  :type 'integer
+(defcustom synaxis-search-default-limit nil
+  "Default maximum number of entries shown in the list buffer.
+Nil means no limit -- the filter returns every matching row.
+Override per query with `#N' in the filter string."
+  :type '(choice (const :tag "No limit" nil) integer)
   :group 'synaxis)
 
 (defconst synaxis-search--columns
