@@ -223,61 +223,47 @@ If TOK has no `:', treat as bare word (or drop when NEGATED)."
   "SQL fragment matching COL with `LIKE'.  Negate when NEGATED."
   (format "%s %s ? COLLATE NOCASE" col (if negated "NOT LIKE" "LIKE")))
 
-(defun synaxis-filter--date-clause (spec parts-cell params-cell)
-  "Append SQL fragments for date SPEC into PARTS-CELL and PARAMS-CELL."
-  (let ((from (plist-get spec :from))
-        (to   (plist-get spec :to)))
-    (when from
-      (push "e.date >= ?" (car parts-cell))
-      (push from           (car params-cell)))
-    (when to
-      (push "e.date < ?"   (car parts-cell))
-      (push to             (car params-cell)))))
+(defun synaxis-filter--like-token (col tok negated)
+  "Return (CLAUSE . PARAM) for a LIKE token on COL with value TOK.
+Negated when NEGATED."
+  (cons (synaxis-filter--like-clause col negated)
+        (format "%%%s%%" tok)))
 
 (defun synaxis-filter-compile (tokens)
   "Compile parsed TOKENS into a plist `(:where S :params P :limit L)'."
-  (let ((parts (list nil)) (params (list nil)) (limit nil))
-    (dolist (tok tokens)
-      (pcase (car tok)
-        ('tag
-         (push synaxis-filter--exists-sql (car parts))
-         (push (cdr tok) (car params)))
-        ('not-tag
-         (push synaxis-filter--not-exists-sql (car parts))
-         (push (cdr tok) (car params)))
-        ('feed
-         (push (synaxis-filter--like-clause "f.title" nil) (car parts))
-         (push (format "%%%s%%" (cdr tok)) (car params)))
-        ('not-feed
-         (push (synaxis-filter--like-clause "f.title" t) (car parts))
-         (push (format "%%%s%%" (cdr tok)) (car params)))
-        ('title
-         (push (synaxis-filter--like-clause "e.title" nil) (car parts))
-         (push (format "%%%s%%" (cdr tok)) (car params)))
-        ('not-title
-         (push (synaxis-filter--like-clause "e.title" t) (car parts))
-         (push (format "%%%s%%" (cdr tok)) (car params)))
-        ('content
-         (push (synaxis-filter--like-clause "e.content" nil) (car parts))
-         (push (format "%%%s%%" (cdr tok)) (car params)))
-        ('not-content
-         (push (synaxis-filter--like-clause "e.content" t) (car parts))
-         (push (format "%%%s%%" (cdr tok)) (car params)))
-        ('text
-         (push (concat "(e.title LIKE ? COLLATE NOCASE"
-                       " OR e.content LIKE ? COLLATE NOCASE)")
-               (car parts))
-         (push (format "%%%s%%" (cdr tok)) (car params))
-         (push (format "%%%s%%" (cdr tok)) (car params)))
-        ('date
-         (synaxis-filter--date-clause (cdr tok) parts params))
-        ('limit
-         (setq limit (cdr tok)))))
-    (list :where (if (car parts)
-                     (string-join (nreverse (car parts)) " AND ")
-                   "1=1")
-          :params (nreverse (car params))
-          :limit limit)))
+  (let (parts params limit)
+    (cl-flet ((emit (clause &rest ps)
+                (push clause parts)
+                (dolist (p ps) (push p params))))
+      (dolist (tok tokens)
+        (pcase (car tok)
+          ('tag         (emit synaxis-filter--exists-sql     (cdr tok)))
+          ('not-tag     (emit synaxis-filter--not-exists-sql (cdr tok)))
+          ('feed        (pcase-let ((`(,c . ,p) (synaxis-filter--like-token "f.title"   (cdr tok) nil)))
+                          (emit c p)))
+          ('not-feed    (pcase-let ((`(,c . ,p) (synaxis-filter--like-token "f.title"   (cdr tok) t)))
+                          (emit c p)))
+          ('title       (pcase-let ((`(,c . ,p) (synaxis-filter--like-token "e.title"   (cdr tok) nil)))
+                          (emit c p)))
+          ('not-title   (pcase-let ((`(,c . ,p) (synaxis-filter--like-token "e.title"   (cdr tok) t)))
+                          (emit c p)))
+          ('content     (pcase-let ((`(,c . ,p) (synaxis-filter--like-token "e.content" (cdr tok) nil)))
+                          (emit c p)))
+          ('not-content (pcase-let ((`(,c . ,p) (synaxis-filter--like-token "e.content" (cdr tok) t)))
+                          (emit c p)))
+          ('text
+           (let ((wild (format "%%%s%%" (cdr tok))))
+             (emit "(e.title LIKE ? COLLATE NOCASE OR e.content LIKE ? COLLATE NOCASE)"
+                   wild wild)))
+          ('date
+           (let ((from (plist-get (cdr tok) :from))
+                 (to   (plist-get (cdr tok) :to)))
+             (when from (emit "e.date >= ?" from))
+             (when to   (emit "e.date < ?"  to))))
+          ('limit (setq limit (cdr tok))))))
+    (list :where  (if parts (string-join (nreverse parts) " AND ") "1=1")
+          :params (nreverse params)
+          :limit  limit)))
 
 ;;; Completions
 
@@ -321,19 +307,22 @@ Reads from the `tags' registry (schema v2+); no DISTINCT scan."
                  ORDER BY date DESC LIMIT ?;"
              (list limit)))))
 
+(defun synaxis-filter--prefix-each (prefix values)
+  "Return VALUES with PREFIX prepended to each."
+  (mapcar (lambda (v) (concat prefix v)) values))
+
 (defun synaxis-filter-completions ()
   "Return a list of completion candidate strings for the filter prompt."
   (let ((tags  (synaxis-filter--db-tags))
         (feeds (synaxis-filter--db-feed-titles))
         (titles (synaxis-filter--db-recent-entry-titles
                  synaxis-filter-title-completion-limit)))
-    (append
-     synaxis-filter--static-completions
-     (mapcar (lambda (v) (concat "tag:" v)) tags)
-     (mapcar (lambda (v) (concat "-tag:" v)) tags)
-     (mapcar (lambda (v) (concat "feed:" v)) feeds)
-     (mapcar (lambda (v) (concat "-feed:" v)) feeds)
-     (mapcar (lambda (v) (concat "title:" v)) titles))))
+    (append synaxis-filter--static-completions
+            (synaxis-filter--prefix-each "tag:"   tags)
+            (synaxis-filter--prefix-each "-tag:"  tags)
+            (synaxis-filter--prefix-each "feed:"  feeds)
+            (synaxis-filter--prefix-each "-feed:" feeds)
+            (synaxis-filter--prefix-each "title:" titles))))
 
 (provide 'synaxis-filter)
 ;;; synaxis-filter.el ends here
