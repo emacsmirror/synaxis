@@ -115,12 +115,13 @@ Tag-face changes made while the buffer is open take effect on `g'.")
 ;;; Filter compilation
 
 (defun synaxis-search--compile-filter (filter)
-  "Compile FILTER string to (WHERE PARAMS LIMIT POST-FILTER) for the DB layer."
+  "Compile FILTER string to a plist (:where :params :limit :post-filter).
+The :limit default is filled in from `synaxis-search-default-limit'."
   (let ((c (synaxis-filter-compile (synaxis-filter-parse filter))))
-    (list (plist-get c :where)
-          (plist-get c :params)
-          (or (plist-get c :limit) synaxis-search-default-limit)
-          (plist-get c :post-filter))))
+    (list :where       (plist-get c :where)
+          :params      (plist-get c :params)
+          :limit       (or (plist-get c :limit) synaxis-search-default-limit)
+          :post-filter (plist-get c :post-filter))))
 
 ;;; Row formatting
 
@@ -241,10 +242,10 @@ tag-face cache from the registry."
     (synaxis-search--rebuild-tag-face-cache)
     (let* ((spec (synaxis-search--compile-filter
                   (or synaxis-search--filter "")))
-           (where (nth 0 spec))
-           (params (nth 1 spec))
-           (limit (nth 2 spec))
-           (post-filter (nth 3 spec))
+           (where (plist-get spec :where))
+           (params (plist-get spec :params))
+           (limit (plist-get spec :limit))
+           (post-filter (plist-get spec :post-filter))
            (entries (synaxis-db-list-entries where params limit post-filter)))
       (setq tabulated-list-entries
             (mapcar (lambda (e)
