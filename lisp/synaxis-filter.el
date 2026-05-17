@@ -200,24 +200,23 @@ regex-FIELD (or not-regex-FIELD) cell with the stripped, validated
 pattern.  `tag' values are always treated as literal strings."
   (pcase key
     ((or 'feed 'title 'content)
-     (if (synaxis-filter--regex-shape-p val)
-         (let ((pat (synaxis-filter--validate-regex
-                     (synaxis-filter--strip-slashes val))))
-           (pcase key
-             ('feed    (cons (if negated 'not-regex-feed    'regex-feed)    pat))
-             ('title   (cons (if negated 'not-regex-title   'regex-title)   pat))
-             ('content (cons (if negated 'not-regex-content 'regex-content) pat))))
-       (pcase key
-         ('feed    (cons (if negated 'not-feed    'feed)    val))
-         ('title   (cons (if negated 'not-title   'title)   val))
-         ('content (cons (if negated 'not-content 'content) val)))))
-    ('tag     (cons (if negated 'not-tag 'tag) val))
-    ('date    (and (not negated)
-                   (let ((spec (synaxis-filter-parse-date-spec val)))
-                     (and spec (cons 'date spec)))))
-    ('limit   (and (not negated)
-                   (let ((n (string-to-number val)))
-                     (and (> n 0) (cons 'limit n)))))))
+     (let* ((regex? (synaxis-filter--regex-shape-p val))
+            (pat (if regex?
+                     (synaxis-filter--validate-regex
+                      (synaxis-filter--strip-slashes val))
+                   val))
+            (sym (intern (format "%s%s%s"
+                                 (if negated "not-" "")
+                                 (if regex? "regex-" "")
+                                 key))))
+       (cons sym pat)))
+    ('tag   (cons (if negated 'not-tag 'tag) val))
+    ('date  (and (not negated)
+                 (let ((spec (synaxis-filter-parse-date-spec val)))
+                   (and spec (cons 'date spec)))))
+    ('limit (and (not negated)
+                 (let ((n (string-to-number val)))
+                   (and (> n 0) (cons 'limit n)))))))
 
 (defun synaxis-filter--classify-prefixed (tok negated)
   "Classify TOK as a `prefix:value' token.
