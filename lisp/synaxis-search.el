@@ -450,8 +450,7 @@ point falls back to `point-min'."
         (when (derived-mode-p 'synaxis-search-mode)
           (let ((id (synaxis-search-current-entry)))
             (synaxis-search-refresh)
-            (if (and id (synaxis-search--goto-entry id))
-                nil
+            (unless (and id (synaxis-search--goto-entry id))
               (goto-char (point-min)))))))))
 
 (add-hook 'synaxis-fetch-queue-drained-hook #'synaxis-search--auto-refresh)
