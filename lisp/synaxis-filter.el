@@ -285,24 +285,33 @@ Returns nil when S is nil rather than erroring."
        (let ((case-fold-search t))
          (string-match-p pattern s))))
 
+(defconst synaxis-filter--regex-kinds
+  '(regex-title     not-regex-title
+		    regex-content   not-regex-content
+		    regex-feed      not-regex-feed
+		    regex-text      not-regex-text)
+  "Token kinds that compile into a `:post-filter' predicate.")
+
 (defun synaxis-filter--regex-predicate (kind pattern)
   "Return a single-token predicate for regex token KIND with PATTERN.
-KIND is one of `regex-title', `not-regex-title', `regex-content',
-`not-regex-content', `regex-feed', `not-regex-feed', `regex-text',
-`not-regex-text'.  Returned closure takes an entry plist."
-  (pcase kind
-    ('regex-title       (lambda (e) (synaxis-filter--regex-match pattern (plist-get e :title))))
-    ('not-regex-title   (lambda (e) (not (synaxis-filter--regex-match pattern (plist-get e :title)))))
-    ('regex-content     (lambda (e) (synaxis-filter--regex-match pattern (plist-get e :content))))
-    ('not-regex-content (lambda (e) (not (synaxis-filter--regex-match pattern (plist-get e :content)))))
-    ('regex-feed        (lambda (e) (synaxis-filter--regex-match pattern (plist-get e :feed-title))))
-    ('not-regex-feed    (lambda (e) (not (synaxis-filter--regex-match pattern (plist-get e :feed-title)))))
-    ('regex-text        (lambda (e)
-                          (or (synaxis-filter--regex-match pattern (plist-get e :title))
-                              (synaxis-filter--regex-match pattern (plist-get e :content)))))
-    ('not-regex-text    (lambda (e)
-                          (not (or (synaxis-filter--regex-match pattern (plist-get e :title))
-                                   (synaxis-filter--regex-match pattern (plist-get e :content))))))))
+KIND is one of the eight `regex-FIELD' / `not-regex-FIELD' symbols
+in `synaxis-filter--regex-kinds'.  Returned closure takes an entry
+plist; matches case-insensitively; nil field values are no match."
+  (pcase-let* ((`(,fields ,neg)
+                (pcase kind
+                  ('regex-title       '((:title) nil))
+                  ('not-regex-title   '((:title) t))
+                  ('regex-content     '((:content) nil))
+                  ('not-regex-content '((:content) t))
+                  ('regex-feed        '((:feed-title) nil))
+                  ('not-regex-feed    '((:feed-title) t))
+                  ('regex-text        '((:title :content) nil))
+                  ('not-regex-text    '((:title :content) t)))))
+    (lambda (e)
+      (let ((hit (cl-some
+                  (lambda (f) (synaxis-filter--regex-match pattern (plist-get e f)))
+                  fields)))
+        (if neg (not hit) hit)))))
 
 (defconst synaxis-filter--exists-sql
   "EXISTS (SELECT 1 FROM entry_tags t WHERE t.entry_id = e.id AND t.tag = ?)")
@@ -357,10 +366,7 @@ all regex tokens, or nil when no regex tokens are present."
              (when from (emit "e.date >= ?" from))
              (when to   (emit "e.date < ?"  to))))
           ('limit (setq limit (cdr tok)))
-          ((and kind (guard (memq kind '(regex-title     not-regex-title
-							 regex-content   not-regex-content
-							 regex-feed      not-regex-feed
-							 regex-text      not-regex-text))))
+          ((and kind (guard (memq kind synaxis-filter--regex-kinds)))
            (emit-pred kind (cdr tok))))))
     (list :where       (if parts (string-join (nreverse parts) " AND ") "1=1")
           :params      (nreverse params)
