@@ -667,7 +667,11 @@
        (should (string-match-p "^A" (plist-get r :title)))))))
 
 (ert-deftest synaxis-db-test-list-entries-post-filter-respects-limit ()
-  "When POST-FILTER yields more than LIMIT survivors, only LIMIT are returned."
+  "When POST-FILTER survivors exceed LIMIT, only LIMIT are returned;
+when survivors are fewer than LIMIT, only the survivors are returned.
+The second clause also proves SQL LIMIT is suppressed: the predicate
+rejects the top three date-DESC rows, so the function must scan all
+five rows to surface the two acceptors."
   (synaxis-tests--with-tmp
    (dotimes (i 5)
      (synaxis-tests--seed-entry
@@ -676,9 +680,16 @@
       (format "Title %d" i)
       (float (+ 1 i))
       t))
-   (let* ((pred (lambda (_e) t))
-          (rows (synaxis-db-list-entries nil nil 3 pred)))
-     (should (= 3 (length rows))))))
+   (let* ((tautology (lambda (_e) t))
+          (rows-cap (synaxis-db-list-entries nil nil 3 tautology)))
+     (should (= 3 (length rows-cap))))
+   (let* ((accept-low (lambda (e)
+                        (let ((d (or (plist-get e :date) 0.0)))
+                          (<= d 2.0))))
+          (rows-scan (synaxis-db-list-entries nil nil 3 accept-low)))
+     (should (= 2 (length rows-scan)))
+     (dolist (r rows-scan)
+       (should (<= (plist-get r :date) 2.0))))))
 
 (ert-deftest synaxis-db-test-list-entries-no-post-filter-preserves-fast-path ()
   "Calling with three positional args (no post-filter) keeps existing behaviour."
