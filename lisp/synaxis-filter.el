@@ -150,6 +150,28 @@ Recognised units: s, m, h, d, w, months, y.  nil otherwise."
       (synaxis-filter--absolute-date s)
       (synaxis-filter--relative-date s)))
 
+;;; Regex token helpers
+
+(defun synaxis-filter--regex-shape-p (s)
+  "Return non-nil when S is `/REGEX/' with a non-empty body.
+Requires both leading and trailing slash and at least one char between."
+  (and (stringp s)
+       (> (length s) 2)
+       (eq (aref s 0) ?/)
+       (eq (aref s (1- (length s))) ?/)))
+
+(defun synaxis-filter--strip-slashes (s)
+  "Return S with one leading and one trailing slash removed."
+  (substring s 1 (1- (length s))))
+
+(defun synaxis-filter--validate-regex (pattern)
+  "Probe PATTERN with `string-match-p'.
+Return PATTERN on success; signal `user-error' on invalid regex."
+  (condition-case err
+      (progn (string-match-p pattern "") pattern)
+    (invalid-regexp
+     (user-error "Invalid regex /%s/: %s" pattern (cadr err)))))
+
 (defun synaxis-filter-parse-date-spec (s)
   "Parse date spec S into a plist `(:from F :to T)' or nil.
 F and T are float-time bounds; either may be nil (open end).
@@ -172,12 +194,24 @@ Supports ranges of the form LO..HI, LO.., and ..HI."
 ;;; Token classification
 
 (defun synaxis-filter--token-for (key val negated)
-  "Build a token cell for KEY=VAL, optionally NEGATED."
+  "Build a token cell for KEY=VAL, optionally NEGATED.
+For `title', `content', and `feed', a VAL shaped `/RE/' produces a
+regex-FIELD (or not-regex-FIELD) cell with the stripped, validated
+pattern.  `tag' values are always treated as literal strings."
   (pcase key
-    ('tag     (cons (if negated 'not-tag     'tag)     val))
-    ('feed    (cons (if negated 'not-feed    'feed)    val))
-    ('title   (cons (if negated 'not-title   'title)   val))
-    ('content (cons (if negated 'not-content 'content) val))
+    ((or 'feed 'title 'content)
+     (if (synaxis-filter--regex-shape-p val)
+         (let ((pat (synaxis-filter--validate-regex
+                     (synaxis-filter--strip-slashes val))))
+           (pcase key
+             ('feed    (cons (if negated 'not-regex-feed    'regex-feed)    pat))
+             ('title   (cons (if negated 'not-regex-title   'regex-title)   pat))
+             ('content (cons (if negated 'not-regex-content 'regex-content) pat))))
+       (pcase key
+         ('feed    (cons (if negated 'not-feed    'feed)    val))
+         ('title   (cons (if negated 'not-title   'title)   val))
+         ('content (cons (if negated 'not-content 'content) val)))))
+    ('tag     (cons (if negated 'not-tag 'tag) val))
     ('date    (and (not negated)
                    (let ((spec (synaxis-filter-parse-date-spec val)))
                      (and spec (cons 'date spec)))))
@@ -187,13 +221,18 @@ Supports ranges of the form LO..HI, LO.., and ..HI."
 
 (defun synaxis-filter--classify-prefixed (tok negated)
   "Classify TOK as a `prefix:value' token.
-If TOK has no `:', treat as bare word (or drop when NEGATED)."
+If TOK has no `:', treat as bare word, bare regex (when `/RE/'-shaped),
+or drop when NEGATED and not regex-shaped."
   (cond
    ((string-match "\\`\\([a-z]+\\):\\(.+\\)\\'" tok)
     (synaxis-filter--token-for
      (intern (match-string 1 tok))
      (match-string 2 tok)
      negated))
+   ((synaxis-filter--regex-shape-p tok)
+    (let ((pat (synaxis-filter--validate-regex
+                (synaxis-filter--strip-slashes tok))))
+      (cons (if negated 'not-regex-text 'regex-text) pat)))
    (negated nil)              ;; `-WORD' unsupported
    (t (cons 'text tok))))
 
