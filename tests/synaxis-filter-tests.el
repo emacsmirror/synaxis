@@ -478,5 +478,72 @@
   (should (equal '((title . "//"))
                  (synaxis-filter-parse "title://"))))
 
+;;; Regex compilation
+
+(ert-deftest synaxis-filter-test-compile-no-regex-omits-post-filter ()
+  "A compile of pure LIKE tokens yields nil :post-filter."
+  (let ((spec (synaxis-filter-compile '((title . "foo")))))
+    (should (null (plist-get spec :post-filter)))))
+
+(ert-deftest synaxis-filter-test-compile-regex-produces-post-filter ()
+  "A compile that includes a regex token yields a callable :post-filter."
+  (let ((spec (synaxis-filter-compile '((regex-title . "^A")))))
+    (should (functionp (plist-get spec :post-filter)))))
+
+(ert-deftest synaxis-filter-test-post-filter-matches-title-regex ()
+  "The compiled predicate matches a title against the pattern."
+  (let* ((spec (synaxis-filter-compile '((regex-title . "^A"))))
+         (pred (plist-get spec :post-filter)))
+    (should     (funcall pred (list :title "Alpha" :content "")))
+    (should-not (funcall pred (list :title "Bravo" :content "")))))
+
+(ert-deftest synaxis-filter-test-post-filter-matches-case-insensitively ()
+  "Regex matching is always case-insensitive."
+  (let* ((spec (synaxis-filter-compile '((regex-title . "rust"))))
+         (pred (plist-get spec :post-filter)))
+    (should (funcall pred (list :title "RUST is fun" :content "")))
+    (should (funcall pred (list :title "RuSt"        :content "")))))
+
+(ert-deftest synaxis-filter-test-post-filter-handles-negation ()
+  "not-regex-title inverts the match."
+  (let* ((spec (synaxis-filter-compile '((not-regex-title . "^A"))))
+         (pred (plist-get spec :post-filter)))
+    (should-not (funcall pred (list :title "Alpha" :content "")))
+    (should     (funcall pred (list :title "Bravo" :content "")))))
+
+(ert-deftest synaxis-filter-test-post-filter-content-regex ()
+  (let* ((spec (synaxis-filter-compile '((regex-content . "world"))))
+         (pred (plist-get spec :post-filter)))
+    (should     (funcall pred (list :title "x" :content "hello world")))
+    (should-not (funcall pred (list :title "x" :content "hello")))))
+
+(ert-deftest synaxis-filter-test-post-filter-feed-regex ()
+  (let* ((spec (synaxis-filter-compile '((regex-feed . "Daily"))))
+         (pred (plist-get spec :post-filter)))
+    (should     (funcall pred (list :feed-title "The Daily News")))
+    (should-not (funcall pred (list :feed-title "Weekly Digest")))))
+
+(ert-deftest synaxis-filter-test-post-filter-text-regex-matches-title-or-content ()
+  (let* ((spec (synaxis-filter-compile '((regex-text . "foo"))))
+         (pred (plist-get spec :post-filter)))
+    (should     (funcall pred (list :title "foo bar" :content "x")))
+    (should     (funcall pred (list :title "x"       :content "foo bar")))
+    (should-not (funcall pred (list :title "x"       :content "y")))))
+
+(ert-deftest synaxis-filter-test-post-filter-conjoins-multiple-regex-tokens ()
+  "Two regex tokens in the same spec are AND-ed."
+  (let* ((spec (synaxis-filter-compile
+                '((regex-title . "^A") (regex-content . "world"))))
+         (pred (plist-get spec :post-filter)))
+    (should     (funcall pred (list :title "Alpha" :content "hello world")))
+    (should-not (funcall pred (list :title "Alpha" :content "hello")))
+    (should-not (funcall pred (list :title "Bravo" :content "hello world")))))
+
+(ert-deftest synaxis-filter-test-post-filter-nil-strings-do-not-error ()
+  "A nil :title or :content does not blow up the predicate."
+  (let* ((spec (synaxis-filter-compile '((regex-text . "foo"))))
+         (pred (plist-get spec :post-filter)))
+    (should-not (funcall pred (list :title nil :content nil)))))
+
 (provide 'synaxis-filter-tests)
 ;;; synaxis-filter-tests.el ends here
