@@ -68,6 +68,13 @@ modified) plist, or nil to skip the entry.")
 (defvar synaxis-fetch--in-flight (make-hash-table :test 'equal)
   "Set of feed URLs currently being fetched.")
 
+(defvar synaxis-fetch-queue-drained-hook nil
+  "Hook run with no args after every in-flight feed fetch has completed.
+Fires once per sync, after the last `synaxis-fetch--callback' has
+returned and `synaxis-fetch--in-flight' is empty.  Hook bodies run
+on the next event-loop tick, not inside the dying URL response
+buffer.")
+
 (defun synaxis-fetch--in-flight-p (url)
   "Non-nil if URL is currently being fetched."
   (gethash url synaxis-fetch--in-flight))
@@ -284,7 +291,8 @@ crashing when synaxis does not warm `url-cache-directory'."
         (synaxis-fetch--process-response buf url)
       (remhash url synaxis-fetch--in-flight)
       (when (zerop (hash-table-count synaxis-fetch--in-flight))
-        (synaxis-fetch--cache-advice-toggle nil))
+        (synaxis-fetch--cache-advice-toggle nil)
+        (run-at-time 0 nil #'run-hooks 'synaxis-fetch-queue-drained-hook))
       (when (buffer-live-p buf)
         (kill-buffer buf)))))
 
