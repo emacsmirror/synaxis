@@ -423,5 +423,38 @@ With point on no row, falls back to `synaxis-edit-feed's prompt."
   (synaxis-fetch-all)
   (message "synaxis: fetching feeds -- press `g' to refresh."))
 
+;;; Auto-refresh on fetch-queue drain
+
+(defvar synaxis-fetch-queue-drained-hook)
+
+(defun synaxis-search--goto-entry (id)
+  "Move point to the tabulated-list row whose id equals ID.
+No-op when no row matches."
+  (let ((target (save-excursion
+                  (goto-char (point-min))
+                  (cl-loop until (eobp)
+                           for row-id = (tabulated-list-get-id)
+                           when (equal id row-id) return (point)
+                           do (forward-line 1)))))
+    (when target (goto-char target))))
+
+(defun synaxis-search--auto-refresh ()
+  "Refresh every live `synaxis-search-mode' buffer.
+Captures the entry id at point before reprint and restores it
+after, so the user does not lose their place when new entries
+arrive at the top of the list.  When the entry has been deleted,
+point falls back to `point-min'."
+  (dolist (buf (buffer-list))
+    (when (buffer-live-p buf)
+      (with-current-buffer buf
+        (when (derived-mode-p 'synaxis-search-mode)
+          (let ((id (synaxis-search-current-entry)))
+            (synaxis-search-refresh)
+            (if (and id (synaxis-search--goto-entry id))
+                nil
+              (goto-char (point-min)))))))))
+
+(add-hook 'synaxis-fetch-queue-drained-hook #'synaxis-search--auto-refresh)
+
 (provide 'synaxis-search)
 ;;; synaxis-search.el ends here
