@@ -425,7 +425,7 @@ and point should land at the start of the buffer."
    (with-current-buffer "*synaxis*"
      (should (= 2 (length tabulated-list-entries)))
      (dolist (row tabulated-list-entries)
-       (let* ((id    (car row))
+       (let* ((id (car row))
               (entry (synaxis-db-get-entry id)))
          (should (string-match-p "^A" (plist-get entry :title))))))))
 
