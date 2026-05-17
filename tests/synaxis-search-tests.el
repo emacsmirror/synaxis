@@ -412,5 +412,22 @@ and point should land at the start of the buffer."
        (should-not (equal id-a (tabulated-list-get-id)))
        (should (= (point) (point-min)))))))
 
+;;; Regex filter end-to-end
+
+(ert-deftest synaxis-search-test-refresh-applies-regex-filter ()
+  "Setting the filter to `title:/^A/' restricts the buffer to A-titled rows."
+  (synaxis-tests--with-tmp
+   (synaxis-tests--seed-entry "https://example.com/x" "1" "Alpha"  1.0 t)
+   (synaxis-tests--seed-entry "https://example.com/x" "2" "Bravo"  2.0 t)
+   (synaxis-tests--seed-entry "https://example.com/x" "3" "Alaska" 3.0 t)
+   (let ((synaxis-search-default-filter "title:/^A/"))
+     (synaxis-search))
+   (with-current-buffer "*synaxis*"
+     (should (= 2 (length tabulated-list-entries)))
+     (dolist (row tabulated-list-entries)
+       (let* ((id    (car row))
+              (entry (synaxis-db-get-entry id)))
+         (should (string-match-p "^A" (plist-get entry :title))))))))
+
 (provide 'synaxis-search-tests)
 ;;; synaxis-search-tests.el ends here
