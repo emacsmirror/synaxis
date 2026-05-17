@@ -33,8 +33,27 @@
 ;; meaningless and ignored.  Bare-word negation (`-WORD') is not
 ;; supported in v0.1.1 -- use `-title:' or `-content:' instead.
 ;;
-;; `=' uses `LIKE COLLATE NOCASE'.  SQLite does not ship a REGEXP
-;; function; rich pattern matching is deferred to v1+.
+;; Regex tokens (notmuch-style slash-delimited):
+;;
+;;   title:/RE/    -title:/RE/      regex on entry title
+;;   content:/RE/  -content:/RE/    regex on entry content
+;;   feed:/RE/     -feed:/RE/       regex on feed title
+;;   /RE/          -/RE/            regex on title OR content
+;;
+;; RE is Emacs regex (see `string-match-p').  All regex matches are
+;; case-insensitive, mirroring the LIKE `COLLATE NOCASE' behaviour.
+;; The closing slash is required; `title:/foo' (no close) falls
+;; through to a literal LIKE token.  Quoting works inside slashes:
+;; `title:"/foo bar/"'.  Invalid patterns raise `user-error' at
+;; parse time.
+;;
+;; SQLite cannot push regex down (Emacs 29's sqlite-* API lacks
+;; sqlite_create_function), so regex is applied as an Elisp
+;; post-filter on rows returned by the SQL stage.  When a regex
+;; token is present the SQL LIMIT is suppressed and LIMIT is applied
+;; after filtering instead.  Cost is proportional to rows matching
+;; the SQL predicates; narrow with `tag:', `feed:', or `date:'
+;; before adding `/RE/' for best performance.
 
 ;;; Code:
 
@@ -385,6 +404,7 @@ all regex tokens, or nil when no regex tokens are present."
 (defconst synaxis-filter--static-completions
   '("tag:" "-tag:" "feed:" "-feed:" "title:" "-title:"
     "content:" "-content:" "date:" "limit:"
+    "title:/" "-title:/" "content:/" "-content:/" "feed:/" "-feed:/" "/" "-/"
     "date:today" "date:yesterday"
     "date:thisweek" "date:thismonth" "date:thisyear"
     "date:7d" "date:30d" "date:1y")

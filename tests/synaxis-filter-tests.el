@@ -327,7 +327,8 @@
           (c (synaxis-filter-completions))
           (titles (seq-filter (lambda (s)
                                 (and (string-prefix-p "title:" s)
-                                     (> (length s) 6)))
+                                     (> (length s) 6)
+                                     (not (string-suffix-p "/" s))))
                               c)))
      (should (= 10 (length titles))))))
 
