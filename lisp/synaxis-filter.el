@@ -278,6 +278,32 @@ inside quotes is preserved.  See `synaxis-filter--tokenize'."
 
 ;;; Compiler
 
+(defun synaxis-filter--regex-match (pattern s)
+  "Case-insensitive `string-match-p' of PATTERN on S.
+Returns nil when S is nil rather than erroring."
+  (and (stringp s)
+       (let ((case-fold-search t))
+         (string-match-p pattern s))))
+
+(defun synaxis-filter--regex-predicate (kind pattern)
+  "Return a single-token predicate for regex token KIND with PATTERN.
+KIND is one of `regex-title', `not-regex-title', `regex-content',
+`not-regex-content', `regex-feed', `not-regex-feed', `regex-text',
+`not-regex-text'.  Returned closure takes an entry plist."
+  (pcase kind
+    ('regex-title       (lambda (e) (synaxis-filter--regex-match pattern (plist-get e :title))))
+    ('not-regex-title   (lambda (e) (not (synaxis-filter--regex-match pattern (plist-get e :title)))))
+    ('regex-content     (lambda (e) (synaxis-filter--regex-match pattern (plist-get e :content))))
+    ('not-regex-content (lambda (e) (not (synaxis-filter--regex-match pattern (plist-get e :content)))))
+    ('regex-feed        (lambda (e) (synaxis-filter--regex-match pattern (plist-get e :feed-title))))
+    ('not-regex-feed    (lambda (e) (not (synaxis-filter--regex-match pattern (plist-get e :feed-title)))))
+    ('regex-text        (lambda (e)
+                          (or (synaxis-filter--regex-match pattern (plist-get e :title))
+                              (synaxis-filter--regex-match pattern (plist-get e :content)))))
+    ('not-regex-text    (lambda (e)
+                          (not (or (synaxis-filter--regex-match pattern (plist-get e :title))
+                                   (synaxis-filter--regex-match pattern (plist-get e :content))))))))
+
 (defconst synaxis-filter--exists-sql
   "EXISTS (SELECT 1 FROM entry_tags t WHERE t.entry_id = e.id AND t.tag = ?)")
 
@@ -295,11 +321,16 @@ Negated when NEGATED."
         (format "%%%s%%" tok)))
 
 (defun synaxis-filter-compile (tokens)
-  "Compile parsed TOKENS into a plist `(:where S :params P :limit L)'."
-  (let (parts params limit)
+  "Compile parsed TOKENS into a plist.
+Returns (:where S :params P :limit L :post-filter PRED-OR-NIL).
+PRED-OR-NIL is a closure (entry) -> boolean composed AND-wise from
+all regex tokens, or nil when no regex tokens are present."
+  (let (parts params limit post-preds)
     (cl-flet ((emit (clause &rest ps)
                 (push clause parts)
-                (dolist (p ps) (push p params))))
+                (dolist (p ps) (push p params)))
+              (emit-pred (kind val)
+                (push (synaxis-filter--regex-predicate kind val) post-preds)))
       (dolist (tok tokens)
         (pcase-exhaustive (car tok)
           ('tag         (emit synaxis-filter--exists-sql     (cdr tok)))
@@ -325,10 +356,18 @@ Negated when NEGATED."
                  (to   (plist-get (cdr tok) :to)))
              (when from (emit "e.date >= ?" from))
              (when to   (emit "e.date < ?"  to))))
-          ('limit (setq limit (cdr tok))))))
-    (list :where  (if parts (string-join (nreverse parts) " AND ") "1=1")
-          :params (nreverse params)
-          :limit  limit)))
+          ('limit (setq limit (cdr tok)))
+          ((and kind (guard (memq kind '(regex-title     not-regex-title
+							 regex-content   not-regex-content
+							 regex-feed      not-regex-feed
+							 regex-text      not-regex-text))))
+           (emit-pred kind (cdr tok))))))
+    (list :where       (if parts (string-join (nreverse parts) " AND ") "1=1")
+          :params      (nreverse params)
+          :limit       limit
+          :post-filter (and post-preds
+                            (let ((preds (nreverse post-preds)))
+                              (lambda (e) (cl-every (lambda (p) (funcall p e)) preds)))))))
 
 ;;; Completions
 
