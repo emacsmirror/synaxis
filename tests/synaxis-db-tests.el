@@ -651,5 +651,42 @@
 	(error "boom"))))
    (should-not (synaxis-db-get-feed "https://b.example/feed"))))
 
+;;; Post-filter integration
+
+(ert-deftest synaxis-db-test-list-entries-applies-post-filter ()
+  "An optional POST-FILTER drops rows that do not match."
+  (synaxis-tests--with-tmp
+   (synaxis-tests--seed-entry "https://example.com/x" "1" "Alpha"  1.0 t)
+   (synaxis-tests--seed-entry "https://example.com/x" "2" "Bravo"  2.0 t)
+   (synaxis-tests--seed-entry "https://example.com/x" "3" "Alaska" 3.0 t)
+   (let* ((pred (lambda (e)
+                  (string-match-p "^A" (or (plist-get e :title) ""))))
+          (rows (synaxis-db-list-entries nil nil nil pred)))
+     (should (= 2 (length rows)))
+     (dolist (r rows)
+       (should (string-match-p "^A" (plist-get r :title)))))))
+
+(ert-deftest synaxis-db-test-list-entries-post-filter-respects-limit ()
+  "When POST-FILTER yields more than LIMIT survivors, only LIMIT are returned."
+  (synaxis-tests--with-tmp
+   (dotimes (i 5)
+     (synaxis-tests--seed-entry
+      "https://example.com/x"
+      (number-to-string i)
+      (format "Title %d" i)
+      (float (+ 1 i))
+      t))
+   (let* ((pred (lambda (_e) t))
+          (rows (synaxis-db-list-entries nil nil 3 pred)))
+     (should (= 3 (length rows))))))
+
+(ert-deftest synaxis-db-test-list-entries-no-post-filter-preserves-fast-path ()
+  "Calling with three positional args (no post-filter) keeps existing behaviour."
+  (synaxis-tests--with-tmp
+   (synaxis-tests--seed-entry "https://example.com/x" "1" "A" 1.0 t)
+   (synaxis-tests--seed-entry "https://example.com/x" "2" "B" 2.0 t)
+   (let ((rows (synaxis-db-list-entries nil nil 1)))
+     (should (= 1 (length rows))))))
+
 (provide 'synaxis-db-tests)
 ;;; synaxis-db-tests.el ends here
