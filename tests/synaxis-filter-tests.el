@@ -421,5 +421,62 @@
        (synaxis-tag-rules-apply-entry id))
      (should (member "medicine" (synaxis-db-get-tags id))))))
 
+;;; Regex token parsing
+
+(ert-deftest synaxis-filter-test-parse-title-regex ()
+  "`title:/^Re:/' yields a regex-title token with the pattern stripped of slashes."
+  (should (equal '((regex-title . "^Re:"))
+                 (synaxis-filter-parse "title:/^Re:/"))))
+
+(ert-deftest synaxis-filter-test-parse-not-title-regex ()
+  "`-title:/foo/' yields a not-regex-title token."
+  (should (equal '((not-regex-title . "foo"))
+                 (synaxis-filter-parse "-title:/foo/"))))
+
+(ert-deftest synaxis-filter-test-parse-content-regex ()
+  (should (equal '((regex-content . "bar"))
+                 (synaxis-filter-parse "content:/bar/"))))
+
+(ert-deftest synaxis-filter-test-parse-not-content-regex ()
+  (should (equal '((not-regex-content . "bar"))
+                 (synaxis-filter-parse "-content:/bar/"))))
+
+(ert-deftest synaxis-filter-test-parse-feed-regex ()
+  (should (equal '((regex-feed . "baz"))
+                 (synaxis-filter-parse "feed:/baz/"))))
+
+(ert-deftest synaxis-filter-test-parse-not-feed-regex ()
+  (should (equal '((not-regex-feed . "baz"))
+                 (synaxis-filter-parse "-feed:/baz/"))))
+
+(ert-deftest synaxis-filter-test-parse-bare-regex ()
+  "A bare `/foo|bar/' token yields a regex-text token."
+  (should (equal '((regex-text . "foo|bar"))
+                 (synaxis-filter-parse "/foo|bar/"))))
+
+(ert-deftest synaxis-filter-test-parse-bare-not-regex ()
+  "`-/foo/' yields a not-regex-text token."
+  (should (equal '((not-regex-text . "foo"))
+                 (synaxis-filter-parse "-/foo/"))))
+
+(ert-deftest synaxis-filter-test-parse-prefix-without-closing-slash-is-literal-like ()
+  "`title:/foo' (no closing slash) stays a literal LIKE token."
+  (should (equal '((title . "/foo"))
+                 (synaxis-filter-parse "title:/foo"))))
+
+(ert-deftest synaxis-filter-test-parse-quoted-regex-with-whitespace ()
+  "`title:\"/foo bar/\"' preserves the whitespace inside the pattern."
+  (should (equal '((regex-title . "foo bar"))
+                 (synaxis-filter-parse "title:\"/foo bar/\""))))
+
+(ert-deftest synaxis-filter-test-parse-invalid-regex-signals-user-error ()
+  "An unclosed character class raises `user-error' at parse time."
+  (should-error (synaxis-filter-parse "title:/[/") :type 'user-error))
+
+(ert-deftest synaxis-filter-test-parse-empty-slashes-not-regex ()
+  "`title://' is not a regex (empty pattern); falls through to literal LIKE."
+  (should (equal '((title . "//"))
+                 (synaxis-filter-parse "title://"))))
+
 (provide 'synaxis-filter-tests)
 ;;; synaxis-filter-tests.el ends here
