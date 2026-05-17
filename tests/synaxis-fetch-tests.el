@@ -313,5 +313,57 @@
           (should (equal tmp called-with)))
       (delete-file tmp))))
 
+;;; Queue-drained hook
+
+(ert-deftest synaxis-fetch-test-callback-schedules-queue-drained-hook-on-drain ()
+  "When the in-flight table becomes empty inside the callback,
+the drain branch must schedule `run-hooks' on
+`synaxis-fetch-queue-drained-hook' via `run-at-time 0'."
+  (synaxis-tests--with-tmp
+   (let* ((url "https://example.com/atom")
+          (buf (synaxis-tests--http-response
+                "304 Not Modified" nil ""))
+          (scheduled nil))
+     (clrhash synaxis-fetch--in-flight)
+     (puthash url t synaxis-fetch--in-flight)
+     (cl-letf (((symbol-function 'run-at-time)
+                (lambda (secs repeat fn &rest args)
+                  (push (list secs repeat fn args) scheduled))))
+       (with-current-buffer buf
+         (synaxis-fetch--callback nil url)))
+     (should (zerop (hash-table-count synaxis-fetch--in-flight)))
+     (should (cl-find-if
+              (lambda (call)
+                (and (equal 0 (nth 0 call))
+                     (null  (nth 1 call))
+                     (eq    (nth 2 call) #'run-hooks)
+                     (equal (nth 3 call)
+                            '(synaxis-fetch-queue-drained-hook))))
+              scheduled)))))
+
+(ert-deftest synaxis-fetch-test-callback-skips-hook-when-queue-not-drained ()
+  "When the in-flight table is still non-empty after the callback,
+no queue-drained hook should be scheduled."
+  (synaxis-tests--with-tmp
+   (let* ((url "https://example.com/atom")
+          (other "https://example.com/other")
+          (buf (synaxis-tests--http-response
+                "304 Not Modified" nil ""))
+          (scheduled nil))
+     (clrhash synaxis-fetch--in-flight)
+     (puthash url t synaxis-fetch--in-flight)
+     (puthash other t synaxis-fetch--in-flight)
+     (cl-letf (((symbol-function 'run-at-time)
+                (lambda (secs repeat fn &rest args)
+                  (push (list secs repeat fn args) scheduled))))
+       (with-current-buffer buf
+         (synaxis-fetch--callback nil url)))
+     (should (= 1 (hash-table-count synaxis-fetch--in-flight)))
+     (should-not (cl-find-if
+                  (lambda (call)
+                    (equal (nth 3 call)
+                           '(synaxis-fetch-queue-drained-hook)))
+                  scheduled)))))
+
 (provide 'synaxis-fetch-tests)
 ;;; synaxis-fetch-tests.el ends here
