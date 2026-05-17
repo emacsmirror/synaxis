@@ -357,5 +357,60 @@ after, it uses the registry override."
      (synaxis-search-mode)
      (should-error (synaxis-search-browse-entry) :type 'user-error))))
 
+;;; Auto-refresh after queue drain
+
+(ert-deftest synaxis-search-test-auto-refresh-reflects-new-entries ()
+  "After new entries land in the DB, `synaxis-search--auto-refresh'
+should reprint live search buffers so the new rows appear."
+  (synaxis-tests--with-tmp
+   (synaxis-tests--seed-entry "https://example.com/x" "1" "A" 1.0 t)
+   (synaxis-tests--seed-entry "https://example.com/x" "2" "B" 2.0 t)
+   (let ((synaxis-search-default-filter ""))
+     (synaxis-search))
+   (with-current-buffer "*synaxis*"
+     (should (= 2 (length tabulated-list-entries)))
+     (synaxis-tests--seed-entry "https://example.com/x" "3" "C" 3.0 t)
+     (synaxis-tests--seed-entry "https://example.com/x" "4" "D" 4.0 t)
+     (synaxis-search--auto-refresh)
+     (should (= 4 (length tabulated-list-entries))))))
+
+(ert-deftest synaxis-search-test-auto-refresh-preserves-point-on-existing-entry ()
+  "When the entry at point still exists after refresh, point should
+land on the same row even though new entries shifted it."
+  (synaxis-tests--with-tmp
+   (let ((id-a (synaxis-tests--seed-entry "https://example.com/x" "1" "A" 1.0 t))
+         (id-b (synaxis-tests--seed-entry "https://example.com/x" "2" "B" 2.0 t)))
+     (ignore id-b)
+     (let ((synaxis-search-default-filter ""))
+       (synaxis-search))
+     (with-current-buffer "*synaxis*"
+       (goto-char (point-min))
+       (while (and (not (eobp))
+                   (not (equal id-a (tabulated-list-get-id))))
+         (forward-line 1))
+       (should (equal id-a (tabulated-list-get-id)))
+       (synaxis-tests--seed-entry "https://example.com/x" "3" "C" 99.0 t)
+       (synaxis-search--auto-refresh)
+       (should (equal id-a (tabulated-list-get-id)))))))
+
+(ert-deftest synaxis-search-test-auto-refresh-falls-back-when-entry-gone ()
+  "When the entry at point has been deleted, refresh must not error
+and point should land at the start of the buffer."
+  (synaxis-tests--with-tmp
+   (let ((id-a (synaxis-tests--seed-entry "https://example.com/x" "1" "A" 1.0 t)))
+     (synaxis-tests--seed-entry "https://example.com/x" "2" "B" 2.0 t)
+     (let ((synaxis-search-default-filter ""))
+       (synaxis-search))
+     (with-current-buffer "*synaxis*"
+       (goto-char (point-min))
+       (while (and (not (eobp))
+                   (not (equal id-a (tabulated-list-get-id))))
+         (forward-line 1))
+       (should (equal id-a (tabulated-list-get-id)))
+       (synaxis-db-delete-entry id-a)
+       (synaxis-search--auto-refresh)
+       (should-not (equal id-a (tabulated-list-get-id)))
+       (should (= (point) (point-min)))))))
+
 (provide 'synaxis-search-tests)
 ;;; synaxis-search-tests.el ends here
