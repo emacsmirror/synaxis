@@ -68,7 +68,7 @@ integer widths are absolute.")
 ;;; Faces
 
 (defface synaxis-search-unread-face
-  '((t :inherit font-lock-keyword-face :weight bold))
+  '((t :inherit default :weight bold))
   "Face for unread entry titles."
   :group 'synaxis)
 
