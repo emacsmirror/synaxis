@@ -397,5 +397,56 @@ LIKE `%VAL%' so the value is free text the user types directly."
             (synaxis-filter--prefix-each "feed:"  feeds)
             (synaxis-filter--prefix-each "-feed:" feeds))))
 
+;;; Explain
+
+(defun synaxis-filter--explain-render (filter tokens spec)
+  "Render an explain view for FILTER, TOKENS, and compiled SPEC.
+Writes into the current buffer."
+  (insert (format "Filter: %s\n\n" filter))
+  (insert "Tokens:\n")
+  (if tokens
+      (dolist (tok tokens)
+        (insert (format "  %s\n" (prin1-to-string tok))))
+    (insert "  (none)\n"))
+  (insert "\nWHERE:\n")
+  (let* ((where (plist-get spec :where))
+         (parts (split-string where " AND " t)))
+    (dolist (p parts)
+      (insert (format "  %s\n" p))))
+  (insert "\nParameters:\n")
+  (let ((params (plist-get spec :params)))
+    (if params
+        (dolist (p params)
+          (insert (format "  %s\n" (prin1-to-string p))))
+      (insert "  (none)\n")))
+  (insert "\nLimit: ")
+  (let ((explicit (plist-get spec :limit))
+        (default (and (boundp 'synaxis-search-default-limit)
+                      synaxis-search-default-limit)))
+    (insert (cond
+             (explicit (format "%d\n" explicit))
+             (default  (format "%d (default)\n" default))
+             (t        "(none)\n")))))
+
+;;;###autoload
+(defun synaxis-filter-explain (filter)
+  "Show the compiled SQL for FILTER in a pop-up buffer.
+Interactively, default to the active search filter."
+  (interactive
+   (list (read-string "Explain filter: "
+                      (or (and (boundp 'synaxis-search--filter)
+                               synaxis-search--filter)
+                          ""))))
+  (let* ((tokens (synaxis-filter-parse filter))
+         (spec (synaxis-filter-compile tokens))
+         (buf (get-buffer-create "*Synaxis Filter Explain*")))
+    (with-current-buffer buf
+      (let ((inhibit-read-only t))
+        (erase-buffer)
+        (synaxis-filter--explain-render filter tokens spec))
+      (goto-char (point-min))
+      (special-mode))
+    (pop-to-buffer buf)))
+
 (provide 'synaxis-filter)
 ;;; synaxis-filter.el ends here
