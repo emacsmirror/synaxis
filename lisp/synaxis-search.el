@@ -425,8 +425,7 @@ With point on no row, falls back to `synaxis-edit-feed's prompt."
   "Kick off `synaxis-fetch-all'.  Press `g' to refresh once it finishes."
   (interactive)
   (require 'synaxis-fetch)
-  (synaxis-fetch-all)
-  (message "synaxis: fetching feeds -- press `g' to refresh."))
+  (synaxis-fetch-all))
 
 ;;; Auto-refresh on fetch-queue drain
 
