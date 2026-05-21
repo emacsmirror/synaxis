@@ -228,10 +228,8 @@ the timezone from the decoded time when present (e.g. trailing
          (error nil))))
 
 (defun synaxis-scrape--children-text (node)
-  "Concatenate NODE's direct string children, trimmed.  Empty when NODE is nil."
-  (if node
-      (string-trim (string-join (seq-filter #'stringp (dom-children node))))
-    ""))
+  "Concatenate all descendant text of NODE, trimmed.  Empty when NODE is nil."
+  (if node (string-trim (dom-texts node "")) ""))
 
 (defun synaxis-scrape--node-date (node)
   "Return ISO date string from NODE's `datetime' attribute or text content."
