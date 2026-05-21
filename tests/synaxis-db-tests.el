@@ -61,7 +61,7 @@
    (let ((db (synaxis-db--ensure-open))
          (id (synaxis-db-upsert-entry
               '(:feed-url "https://example.com/fk" :source-id "1"
-                          :title "T" :date 1.0))))
+                          :title "T" :date "1970-01-01T00:00:01Z"))))
      (should-error
       (sqlite-execute db
                       "INSERT INTO entry_tags (entry_id, tag) VALUES (?, ?);"
@@ -73,7 +73,7 @@
    (synaxis-db-add-feed "https://example.com/c")
    (let ((id (synaxis-db-upsert-entry
               '(:feed-url "https://example.com/c" :source-id "1"
-                          :title "T" :date 1.0))))
+                          :title "T" :date "1970-01-01T00:00:01Z"))))
      (synaxis-db-add-tag id "rust")
      (let ((db (synaxis-db--ensure-open)))
        (sqlite-execute db "UPDATE tags SET tag = 'Rust' WHERE tag = 'rust';"))
@@ -86,7 +86,7 @@
    (synaxis-db-add-feed "https://example.com/d")
    (let ((id (synaxis-db-upsert-entry
               '(:feed-url "https://example.com/d" :source-id "1"
-                          :title "T" :date 1.0))))
+                          :title "T" :date "1970-01-01T00:00:01Z"))))
      (synaxis-db-add-tag id "tmp")
      (let ((db (synaxis-db--ensure-open)))
        (sqlite-execute db "DELETE FROM tags WHERE tag = 'tmp';"))
@@ -109,7 +109,7 @@
      (sqlite-execute db "INSERT INTO feeds (url) VALUES ('https://x');")
      (sqlite-execute db
                      "INSERT INTO entries (feed_url, source_id, date)
-                      VALUES ('https://x', 'a', 1.0);")
+                      VALUES ('https://x', 'a', '1970-01-01T00:00:01Z');")
      (sqlite-execute db
                      "INSERT INTO entry_tags (entry_id, tag) VALUES (1, 'unread');")
      (sqlite-execute db
@@ -178,7 +178,7 @@
    (synaxis-db-add-feed "https://example.com/f")
    (let ((id (synaxis-db-upsert-entry
               '(:feed-url "https://example.com/f"
-                          :source-id "x" :title "T" :date 1.0))))
+                          :source-id "x" :title "T" :date "1970-01-01T00:00:01Z"))))
      (synaxis-db-add-tag id "unread")
      (synaxis-db-remove-feed "https://example.com/f")
      (should-not (synaxis-db-get-feed "https://example.com/f"))
@@ -223,15 +223,15 @@
    (synaxis-db-add-feed "https://example.com/u")
    (let ((id1 (synaxis-db-upsert-entry
                '(:feed-url "https://example.com/u" :source-id "1"
-                           :title "First" :date 1.0))))
+                           :title "First" :date "1970-01-01T00:00:01Z"))))
      (should (integerp id1))
      (let ((id2 (synaxis-db-upsert-entry
                  '(:feed-url "https://example.com/u" :source-id "1"
-                             :title "Second" :date 2.0))))
+                             :title "Second" :date "1970-01-01T00:00:02Z"))))
        (should (equal id1 id2))
        (let ((row (synaxis-db-get-entry id1)))
          (should (equal "Second" (plist-get row :title)))
-         (should (equal 2.0 (plist-get row :date))))))))
+         (should (equal "1970-01-01T00:00:02Z" (plist-get row :date))))))))
 
 (ert-deftest synaxis-db-test-get-entry-by-id ()
   "All entry columns round-trip, including JSON meta."
@@ -239,7 +239,7 @@
    (synaxis-db-add-feed "https://example.com/g")
    (let ((id (synaxis-db-upsert-entry
               '(:feed-url "https://example.com/g" :source-id "abc"
-                          :title "Hello" :link "https://example.com/h" :date 10.0
+                          :title "Hello" :link "https://example.com/h" :date "1970-01-01T00:00:10Z"
                           :content "<p>hi</p>" :content-type "html"
                           :meta (:authors ["Alice" "Bob"])))))
      (let ((e (synaxis-db-get-entry id)))
@@ -256,7 +256,7 @@
    (synaxis-db-add-feed "https://example.com/l")
    (let ((id (synaxis-db-upsert-entry
               '(:feed-url "https://example.com/l" :source-id "k"
-                          :title "T" :date 1.0))))
+                          :title "T" :date "1970-01-01T00:00:01Z"))))
      (should (equal id (synaxis-db-find-entry "https://example.com/l" "k")))
      (should-not (synaxis-db-find-entry "https://example.com/l" "missing")))))
 
@@ -266,11 +266,11 @@
    (synaxis-db-add-feed "https://example.com/a")
    (synaxis-db-add-feed "https://example.com/b")
    (synaxis-db-upsert-entry '(:feed-url "https://example.com/a" :source-id "1"
-                                        :title "A1" :date 1.0))
+                                        :title "A1" :date "1970-01-01T00:00:01Z"))
    (synaxis-db-upsert-entry '(:feed-url "https://example.com/a" :source-id "2"
-                                        :title "A2" :date 2.0))
+                                        :title "A2" :date "1970-01-01T00:00:02Z"))
    (synaxis-db-upsert-entry '(:feed-url "https://example.com/b" :source-id "1"
-                                        :title "B1" :date 3.0))
+                                        :title "B1" :date "1970-01-01T00:00:03Z"))
    (let ((titles (mapcar (lambda (e) (plist-get e :title))
                          (synaxis-db-list-entries "e.feed_url = ?"
                                                   '("https://example.com/a")))))
@@ -283,7 +283,7 @@
    (dotimes (i 5)
      (synaxis-db-upsert-entry
       `(:feed-url "https://example.com/lim" :source-id ,(format "%d" i)
-                  :title ,(format "T%d" i) :date ,(float i))))
+                  :title ,(format "T%d" i) :date ,(format-time-string "%Y-%m-%dT%H:%M:%SZ" i t))))
    (should (= 2 (length (synaxis-db-list-entries nil nil 2))))))
 
 (ert-deftest synaxis-db-test-list-entries-includes-unread-flag ()
@@ -292,10 +292,10 @@
    (synaxis-db-add-feed "https://example.com/u")
    (let ((id1 (synaxis-db-upsert-entry
                '(:feed-url "https://example.com/u" :source-id "1"
-                           :title "U" :date 1.0)))
+                           :title "U" :date "1970-01-01T00:00:01Z")))
          (id2 (synaxis-db-upsert-entry
                '(:feed-url "https://example.com/u" :source-id "2"
-                           :title "R" :date 2.0))))
+                           :title "R" :date "1970-01-01T00:00:02Z"))))
      (synaxis-db-add-tag id1 "unread")
      (let* ((entries (synaxis-db-list-entries nil nil))
             (by-id (lambda (id) (seq-find (lambda (e) (eq id (plist-get e :id)))
@@ -309,7 +309,7 @@
    (synaxis-db-add-feed "https://example.com/tt")
    (let ((id (synaxis-db-upsert-entry
               '(:feed-url "https://example.com/tt" :source-id "1"
-                          :title "T" :date 1.0))))
+                          :title "T" :date "1970-01-01T00:00:01Z"))))
      (synaxis-db-add-tag id "unread")
      (synaxis-db-add-tag id "starred")
      (let* ((entry (car (synaxis-db-list-entries nil nil)))
@@ -323,7 +323,7 @@
    (synaxis-db-add-feed "https://example.com/empty")
    (synaxis-db-upsert-entry '(:feed-url "https://example.com/empty"
                                         :source-id "1"
-                                        :title "T" :date 1.0))
+                                        :title "T" :date "1970-01-01T00:00:01Z"))
    (let ((entry (car (synaxis-db-list-entries nil nil))))
      (should-not (plist-get entry :tags))
      (should-not (plist-get entry :unread)))))
@@ -333,7 +333,7 @@
   (synaxis-tests--with-tmp
    (synaxis-db-add-feed "https://example.com/j" '(:title "JFeed"))
    (synaxis-db-upsert-entry '(:feed-url "https://example.com/j" :source-id "x"
-                                        :title "T" :date 1.0))
+                                        :title "T" :date "1970-01-01T00:00:01Z"))
    (let ((e (car (synaxis-db-list-entries nil nil))))
      (should (equal "JFeed" (plist-get e :feed-title))))))
 
@@ -343,7 +343,7 @@
    (synaxis-db-add-feed "https://example.com/d")
    (let ((id (synaxis-db-upsert-entry
               '(:feed-url "https://example.com/d" :source-id "1"
-                          :title "T" :date 1.0))))
+                          :title "T" :date "1970-01-01T00:00:01Z"))))
      (synaxis-db-add-tag id "unread")
      (synaxis-db-delete-entry id)
      (should-not (synaxis-db-get-entry id))
@@ -457,7 +457,7 @@
    (synaxis-db-add-feed "https://example.com/r")
    (let ((id (synaxis-db-upsert-entry
               '(:feed-url "https://example.com/r" :source-id "1"
-                          :title "T" :date 1.0))))
+                          :title "T" :date "1970-01-01T00:00:01Z"))))
      (synaxis-db-add-tag id "unread")
      (synaxis-db-add-tag id "rust"))
    (let* ((rows (synaxis-db-list-tags))
@@ -472,7 +472,7 @@
    (synaxis-db-add-feed "https://example.com/rn")
    (let ((id (synaxis-db-upsert-entry
               '(:feed-url "https://example.com/rn" :source-id "1"
-                          :title "T" :date 1.0))))
+                          :title "T" :date "1970-01-01T00:00:01Z"))))
      (synaxis-db-add-tag id "rust")
      (synaxis-db-rename-tag "rust" "Rust")
      (should (member "Rust" (synaxis-db-get-tags id)))
@@ -484,10 +484,10 @@
    (synaxis-db-add-feed "https://example.com/m")
    (let ((id1 (synaxis-db-upsert-entry
                '(:feed-url "https://example.com/m" :source-id "1"
-                           :title "T" :date 1.0)))
+                           :title "T" :date "1970-01-01T00:00:01Z")))
          (id2 (synaxis-db-upsert-entry
                '(:feed-url "https://example.com/m" :source-id "2"
-                           :title "T" :date 2.0))))
+                           :title "T" :date "1970-01-01T00:00:02Z"))))
      (synaxis-db-add-tag id1 "alpha")
      (synaxis-db-add-tag id2 "beta")
      ;; id2 already tagged beta; renaming alpha -> beta merges.
@@ -511,7 +511,7 @@
    (synaxis-db-add-feed "https://example.com/del")
    (let ((id (synaxis-db-upsert-entry
               '(:feed-url "https://example.com/del" :source-id "1"
-                          :title "T" :date 1.0))))
+                          :title "T" :date "1970-01-01T00:00:01Z"))))
      (synaxis-db-add-tag id "doomed")
      (synaxis-db-delete-tag "doomed")
      (should-not (member "doomed" (synaxis-db-get-tags id))))))
@@ -521,7 +521,7 @@
    (synaxis-db-add-feed "https://example.com/f")
    (let ((id (synaxis-db-upsert-entry
               '(:feed-url "https://example.com/f" :source-id "1"
-                          :title "T" :date 1.0))))
+                          :title "T" :date "1970-01-01T00:00:01Z"))))
      (synaxis-db-add-tag id "x"))
    (synaxis-db-set-tag-face "x" 'warning)
    (let ((entry (cl-find "x" (synaxis-db-list-tags)
@@ -540,7 +540,7 @@
    (synaxis-db-add-feed "https://example.com/t")
    (let ((id (synaxis-db-upsert-entry
               '(:feed-url "https://example.com/t" :source-id "1"
-                          :title "T" :date 1.0))))
+                          :title "T" :date "1970-01-01T00:00:01Z"))))
      (synaxis-db-add-tag id "unread")
      (synaxis-db-add-tag id "unread")
      (should (equal '("unread") (synaxis-db-get-tags id))))))
@@ -551,7 +551,7 @@
    (synaxis-db-add-feed "https://example.com/t2")
    (let ((id (synaxis-db-upsert-entry
               '(:feed-url "https://example.com/t2" :source-id "1"
-                          :title "T" :date 1.0))))
+                          :title "T" :date "1970-01-01T00:00:01Z"))))
      (synaxis-db-add-tag id "unread")
      (synaxis-db-add-tag id "starred")
      (let ((tags (sort (synaxis-db-get-tags id) #'string<)))
@@ -565,7 +565,7 @@
                        collect (synaxis-db-upsert-entry
                                 `(:feed-url "https://example.com/a"
                                             :source-id ,(format "%d" i)
-                                            :title "T" :date ,(float i))))))
+                                            :title "T" :date ,(format-time-string "%Y-%m-%dT%H:%M:%SZ" i t))))))
      (synaxis-db-bulk-add-tag (cl-subseq ids 0 3) "foo")
      (dolist (id (cl-subseq ids 0 3))
        (should (member "foo" (synaxis-db-get-tags id))))
@@ -578,7 +578,7 @@
    (synaxis-db-add-feed "https://example.com/i")
    (let ((id (synaxis-db-upsert-entry
               '(:feed-url "https://example.com/i" :source-id "1"
-                          :title "T" :date 1.0))))
+                          :title "T" :date "1970-01-01T00:00:01Z"))))
      (synaxis-db-add-tag id "foo")
      (synaxis-db-bulk-add-tag (list id) "foo")
      (should (equal '("foo") (synaxis-db-get-tags id))))))
@@ -598,7 +598,7 @@
                          collect (synaxis-db-upsert-entry
                                   `(:feed-url "https://example.com/big"
                                               :source-id ,(format "%d" i)
-                                              :title "T" :date ,(float i))))))
+                                              :title "T" :date ,(format-time-string "%Y-%m-%dT%H:%M:%SZ" i t))))))
        (synaxis-db-bulk-add-tag ids "mass")
        (dolist (id ids)
          (should (member "mass" (synaxis-db-get-tags id))))))))
@@ -611,7 +611,7 @@
                        collect (synaxis-db-upsert-entry
                                 `(:feed-url "https://example.com/b"
                                             :source-id ,(format "%d" i)
-                                            :title "T" :date ,(float i))))))
+                                            :title "T" :date ,(format-time-string "%Y-%m-%dT%H:%M:%SZ" i t))))))
      (dolist (id ids) (synaxis-db-add-tag id "unread"))
      (synaxis-db-bulk-remove-tag (cl-subseq ids 0 3) "unread")
      (dolist (id (cl-subseq ids 0 3))
@@ -630,7 +630,7 @@
    (synaxis-db-add-feed "https://example.com/rt")
    (let ((id (synaxis-db-upsert-entry
               '(:feed-url "https://example.com/rt" :source-id "1"
-                          :title "T" :date 1.0))))
+                          :title "T" :date "1970-01-01T00:00:01Z"))))
      (synaxis-db-add-tag id "unread")
      (synaxis-db-add-tag id "starred")
      (synaxis-db-remove-tag id "unread")
@@ -650,54 +650,6 @@
 			(list "https://b.example/feed"))
 	(error "boom"))))
    (should-not (synaxis-db-get-feed "https://b.example/feed"))))
-
-;;; Post-filter integration
-
-(ert-deftest synaxis-db-test-list-entries-applies-post-filter ()
-  "An optional POST-FILTER drops rows that do not match."
-  (synaxis-tests--with-tmp
-   (synaxis-tests--seed-entry "https://example.com/x" "1" "Alpha"  1.0 t)
-   (synaxis-tests--seed-entry "https://example.com/x" "2" "Bravo"  2.0 t)
-   (synaxis-tests--seed-entry "https://example.com/x" "3" "Alaska" 3.0 t)
-   (let* ((pred (lambda (e)
-                  (string-match-p "^A" (or (plist-get e :title) ""))))
-          (rows (synaxis-db-list-entries nil nil nil pred)))
-     (should (= 2 (length rows)))
-     (dolist (r rows)
-       (should (string-match-p "^A" (plist-get r :title)))))))
-
-(ert-deftest synaxis-db-test-list-entries-post-filter-respects-limit ()
-  "When POST-FILTER survivors exceed LIMIT, only LIMIT are returned;
-when survivors are fewer than LIMIT, only the survivors are returned.
-The second clause also proves SQL LIMIT is suppressed: the predicate
-rejects the top three date-DESC rows, so the function must scan all
-five rows to surface the two acceptors."
-  (synaxis-tests--with-tmp
-   (dotimes (i 5)
-     (synaxis-tests--seed-entry
-      "https://example.com/x"
-      (number-to-string i)
-      (format "Title %d" i)
-      (float (+ 1 i))
-      t))
-   (let* ((tautology (lambda (_e) t))
-          (rows-cap (synaxis-db-list-entries nil nil 3 tautology)))
-     (should (= 3 (length rows-cap))))
-   (let* ((accept-low (lambda (e)
-                        (let ((d (or (plist-get e :date) 0.0)))
-                          (<= d 2.0))))
-          (rows-scan (synaxis-db-list-entries nil nil 3 accept-low)))
-     (should (= 2 (length rows-scan)))
-     (dolist (r rows-scan)
-       (should (<= (plist-get r :date) 2.0))))))
-
-(ert-deftest synaxis-db-test-list-entries-no-post-filter-preserves-fast-path ()
-  "Calling with three positional args (no post-filter) keeps existing behaviour."
-  (synaxis-tests--with-tmp
-   (synaxis-tests--seed-entry "https://example.com/x" "1" "A" 1.0 t)
-   (synaxis-tests--seed-entry "https://example.com/x" "2" "B" 2.0 t)
-   (let ((rows (synaxis-db-list-entries nil nil 1)))
-     (should (= 1 (length rows))))))
 
 (provide 'synaxis-db-tests)
 ;;; synaxis-db-tests.el ends here

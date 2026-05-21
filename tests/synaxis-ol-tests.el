@@ -23,7 +23,7 @@
                :source-id "1"
                :title "Hello"
                :link "https://example.com/post-1"
-               :date 1.0
+               :date "1970-01-01T00:00:01Z"
                :content "<p>Body.</p>"
                :content-type "html")))
 

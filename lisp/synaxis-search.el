@@ -28,6 +28,7 @@
 (require 'synaxis-db)
 (require 'synaxis-filter)
 (require 'synaxis-tl)
+(require 'parse-time)
 
 (declare-function synaxis-show-entry "synaxis-show" (entry-id &optional peers))
 (declare-function synaxis-fetch-all "synaxis-fetch" ())
@@ -115,13 +116,12 @@ Tag-face changes made while the buffer is open take effect on `g'.")
 ;;; Filter compilation
 
 (defun synaxis-search--compile-filter (filter)
-  "Compile FILTER string to a plist (:where :params :limit :post-filter).
+  "Compile FILTER string to a plist (:where :params :limit).
 The :limit default is filled in from `synaxis-search-default-limit'."
   (let ((c (synaxis-filter-compile (synaxis-filter-parse filter))))
-    (list :where       (plist-get c :where)
-          :params      (plist-get c :params)
-          :limit       (or (plist-get c :limit) synaxis-search-default-limit)
-          :post-filter (plist-get c :post-filter))))
+    (list :where  (plist-get c :where)
+          :params (plist-get c :params)
+          :limit  (or (plist-get c :limit) synaxis-search-default-limit))))
 
 ;;; Row formatting
 
@@ -143,9 +143,12 @@ when set, otherwise falls back to `synaxis-search-tag-face'."
   "Convert ENTRY plist to the column vector used by `tabulated-list-mode'.
 Reads `:unread' and `:tags' from ENTRY rather than re-querying the DB."
   (let* ((unread (plist-get entry :unread))
-         (date   (format-time-string
-                  "%Y-%m-%d"
-                  (seconds-to-time (or (plist-get entry :date) 0))))
+         (date-iso (plist-get entry :date))
+         (date   (if date-iso
+                     (format-time-string
+                      "%Y-%m-%d"
+                      (parse-iso8601-time-string date-iso))
+                   ""))
          (mark   (if unread "*" " "))
          (feed   (or (plist-get entry :feed-title) "?"))
          (tags   (synaxis-search--render-tags (plist-get entry :tags)))
@@ -245,8 +248,7 @@ tag-face cache from the registry."
            (where (plist-get spec :where))
            (params (plist-get spec :params))
            (limit (plist-get spec :limit))
-           (post-filter (plist-get spec :post-filter))
-           (entries (synaxis-db-list-entries where params limit post-filter)))
+           (entries (synaxis-db-list-entries where params limit)))
       (setq tabulated-list-entries
             (mapcar (lambda (e)
                       (list (plist-get e :id)

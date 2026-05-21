@@ -33,16 +33,20 @@
 ;;; Date helpers
 
 (ert-deftest synaxis-parse-test-iso8601-parses-common-shapes ()
-  (should (numberp (synaxis-parse--decode-iso8601 "2024-01-02T03:04:05Z")))
-  (should (numberp (synaxis-parse--decode-iso8601 "2024-01-02T03:04:05+02:00"))))
+  (should (equal "2024-01-02T03:04:05Z"
+                 (synaxis-parse--decode-iso8601 "2024-01-02T03:04:05Z")))
+  (should (equal "2024-01-02T01:04:05Z"
+                 (synaxis-parse--decode-iso8601 "2024-01-02T03:04:05+02:00"))))
 
 (ert-deftest synaxis-parse-test-rfc822-parses-common-shapes ()
-  (should (numberp (synaxis-parse--decode-rfc822 "Tue, 02 Jan 2024 03:04:05 GMT")))
-  (should (numberp (synaxis-parse--decode-rfc822 "02 Jan 2024 03:04:05 +0200"))))
+  (should (equal "2024-01-02T03:04:05Z"
+                 (synaxis-parse--decode-rfc822 "Tue, 02 Jan 2024 03:04:05 GMT")))
+  (should (equal "2024-01-02T01:04:05Z"
+                 (synaxis-parse--decode-rfc822 "02 Jan 2024 03:04:05 +0200"))))
 
 (ert-deftest synaxis-parse-test-decode-date-falls-back-to-now ()
-  (let ((before (float-time)))
-    (should (>= (synaxis-parse--decode-date "completely bogus") before))))
+  (let ((before (synaxis-parse--time-to-iso (current-time))))
+    (should (not (string< (synaxis-parse--decode-date "completely bogus") before)))))
 
 ;;; Atom
 
@@ -57,7 +61,7 @@
     (should (equal "First Post" (plist-get e :title)))
     (should (equal "tag:example.com,2024:1" (plist-get e :source-id)))
     (should (equal "https://example.com/posts/1" (plist-get e :link)))
-    (should (numberp (plist-get e :date)))
+    (should (stringp (plist-get e :date)))
     (should (string-match-p "Hello" (or (plist-get e :content) "")))
     (should (equal "html" (plist-get e :content-type)))))
 
@@ -113,7 +117,7 @@
     (should (equal "RSS Item 1" (plist-get e :title)))
     (should (equal "https://example.com/r/1" (plist-get e :link)))
     (should (equal "https://example.com/r/1" (plist-get e :source-id)))
-    (should (numberp (plist-get e :date)))
+    (should (stringp (plist-get e :date)))
     (should (string-match-p "plain desc" (or (plist-get e :content) "")))))
 
 (ert-deftest synaxis-parse-test-rss-2.0-prefers-content-encoded ()
@@ -148,7 +152,7 @@
     (should (equal "RSS 1.0 Test" (plist-get feed :title)))
     (should (equal "RDF Item" (plist-get e :title)))
     (should (equal "https://example.com/rdf/1" (plist-get e :link)))
-    (should (numberp (plist-get e :date)))))
+    (should (stringp (plist-get e :date)))))
 
 ;;; JSON Feed
 
@@ -161,7 +165,7 @@
     (should (equal "JSON Item" (plist-get e :title)))
     (should (equal "1" (plist-get e :source-id)))
     (should (equal "https://example.com/j/1" (plist-get e :link)))
-    (should (numberp (plist-get e :date)))
+    (should (stringp (plist-get e :date)))
     (should (string-match-p "JSON content" (or (plist-get e :content) "")))))
 
 (provide 'synaxis-parse-tests)

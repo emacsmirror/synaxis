@@ -206,7 +206,7 @@ Strips HTTP headers if present, decodes as UTF-8 fallback."
 ;;; Date extraction
 
 (defun synaxis-scrape--parse-time-loose (s)
-  "Best-effort date parse on S, returning float-time or nil.
+  "Best-effort date parse on S, returning a canonical ISO string or nil.
 Fills in zeros for missing hour/minute/second so date-only strings
 like \"May 15, 2026\" (no time component) still encode.  Preserves
 the timezone from the decoded time when present (e.g. trailing
@@ -217,7 +217,7 @@ the timezone from the decoded time when present (e.g. trailing
              (and (decoded-time-year decoded)
                   (decoded-time-month decoded)
                   (decoded-time-day decoded)
-                  (float-time
+                  (synaxis-parse--time-to-iso
                    (encode-time (or (decoded-time-second decoded) 0)
                                 (or (decoded-time-minute decoded) 0)
                                 (or (decoded-time-hour decoded) 0)
@@ -234,12 +234,12 @@ the timezone from the decoded time when present (e.g. trailing
     ""))
 
 (defun synaxis-scrape--node-date (node)
-  "Return float-time from NODE's `datetime' attribute or text content."
+  "Return ISO date string from NODE's `datetime' attribute or text content."
   (or (synaxis-scrape--parse-time-loose (dom-attr node 'datetime))
       (synaxis-scrape--parse-time-loose (synaxis-scrape--children-text node))))
 
 (defun synaxis-scrape--extract-date (dom selector)
-  "Extract a float-time from DOM using SELECTOR string.
+  "Extract an ISO date string from DOM using SELECTOR string.
 SELECTOR may be nil; returns nil if no match."
   (and selector
        (let ((nodes (synaxis-scrape--query selector dom)))
@@ -304,7 +304,7 @@ BASE-URL resolves relative hrefs.  RULES is the rule plist."
           :link         link
           :date         (or (synaxis-scrape--extract-date
                              node (plist-get rules :date-selector))
-                            (float-time))
+                            (synaxis-parse--time-to-iso (current-time)))
           :content      (synaxis-scrape--node-html node)
           :content-type "html")))
 
@@ -362,7 +362,7 @@ Pure: no HTTP, no DB.  Returns a list of entry plists."
 
 (defun synaxis-scrape--apply-content (buffer rules)
   "Extract content and date from BUFFER (an HTTP response) per RULES.
-Returns a plist `(:content STR-OR-NIL :date FLOAT-OR-NIL)' so the
+Returns a plist `(:content STR-OR-NIL :date STR-OR-NIL)' so the
 caller can update both fields on the entry.  `:date-selector' is
 applied against the article DOM (where per-article dates live),
 not the index DOM."

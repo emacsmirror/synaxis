@@ -235,87 +235,87 @@ after, it uses the registry override."
 
 (ert-deftest synaxis-search-test-edit-tags-adds-with-plus-prefix ()
   (synaxis-tests--with-tmp
-    (let ((id (synaxis-tests--seed-entry
-               "https://example.com/e" "1" "T" 1.0 nil)))
-      (let ((synaxis-search-default-filter ""))
-        (synaxis-search))
-      (with-current-buffer "*synaxis*"
-        (goto-char (point-min))
-        (cl-letf (((symbol-function 'completing-read-multiple)
-                   (lambda (&rest _) (list "+rust"))))
-          (call-interactively 'synaxis-search-edit-tags))
-        (should (member "rust" (synaxis-db-get-tags id)))))))
+   (let ((id (synaxis-tests--seed-entry
+              "https://example.com/e" "1" "T" 1.0 nil)))
+     (let ((synaxis-search-default-filter ""))
+       (synaxis-search))
+     (with-current-buffer "*synaxis*"
+       (goto-char (point-min))
+       (cl-letf (((symbol-function 'completing-read-multiple)
+                  (lambda (&rest _) (list "+rust"))))
+         (call-interactively 'synaxis-search-edit-tags))
+       (should (member "rust" (synaxis-db-get-tags id)))))))
 
 (ert-deftest synaxis-search-test-edit-tags-removes-with-minus-prefix ()
   (synaxis-tests--with-tmp
-    (let ((id (synaxis-tests--seed-entry
-               "https://example.com/e" "1" "T" 1.0 t)))
-      (synaxis-db-add-tag id "starred")
-      (let ((synaxis-search-default-filter ""))
-        (synaxis-search))
-      (with-current-buffer "*synaxis*"
-        (goto-char (point-min))
-        (cl-letf (((symbol-function 'completing-read-multiple)
-                   (lambda (&rest _) (list "-starred"))))
-          (call-interactively 'synaxis-search-edit-tags))
-        (should-not (member "starred" (synaxis-db-get-tags id)))
-        (should (member "unread" (synaxis-db-get-tags id)))))))
+   (let ((id (synaxis-tests--seed-entry
+              "https://example.com/e" "1" "T" 1.0 t)))
+     (synaxis-db-add-tag id "starred")
+     (let ((synaxis-search-default-filter ""))
+       (synaxis-search))
+     (with-current-buffer "*synaxis*"
+       (goto-char (point-min))
+       (cl-letf (((symbol-function 'completing-read-multiple)
+                  (lambda (&rest _) (list "-starred"))))
+         (call-interactively 'synaxis-search-edit-tags))
+       (should-not (member "starred" (synaxis-db-get-tags id)))
+       (should (member "unread" (synaxis-db-get-tags id)))))))
 
 (ert-deftest synaxis-search-test-edit-tags-mixed-add-and-remove ()
   (synaxis-tests--with-tmp
-    (let ((id (synaxis-tests--seed-entry
-               "https://example.com/e" "1" "T" 1.0 t)))
-      (let ((synaxis-search-default-filter ""))
-        (synaxis-search))
-      (with-current-buffer "*synaxis*"
-        (goto-char (point-min))
-        (cl-letf (((symbol-function 'completing-read-multiple)
-                   (lambda (&rest _) (list "+rust" "-unread" "+hot"))))
-          (call-interactively 'synaxis-search-edit-tags))
-        (let ((tags (synaxis-db-get-tags id)))
-          (should     (member "rust" tags))
-          (should     (member "hot"  tags))
-          (should-not (member "unread" tags)))))))
+   (let ((id (synaxis-tests--seed-entry
+              "https://example.com/e" "1" "T" 1.0 t)))
+     (let ((synaxis-search-default-filter ""))
+       (synaxis-search))
+     (with-current-buffer "*synaxis*"
+       (goto-char (point-min))
+       (cl-letf (((symbol-function 'completing-read-multiple)
+                  (lambda (&rest _) (list "+rust" "-unread" "+hot"))))
+         (call-interactively 'synaxis-search-edit-tags))
+       (let ((tags (synaxis-db-get-tags id)))
+         (should     (member "rust" tags))
+         (should     (member "hot"  tags))
+         (should-not (member "unread" tags)))))))
 
 (ert-deftest synaxis-search-test-edit-tags-bare-name-adds ()
   "A bare typed name (no `+`/`-`) is treated as add."
   (synaxis-tests--with-tmp
-    (let ((id (synaxis-tests--seed-entry
-               "https://example.com/e" "1" "T" 1.0 nil)))
-      (let ((synaxis-search-default-filter ""))
-        (synaxis-search))
-      (with-current-buffer "*synaxis*"
-        (goto-char (point-min))
-        (cl-letf (((symbol-function 'completing-read-multiple)
-                   (lambda (&rest _) (list "fresh-tag"))))
-          (call-interactively 'synaxis-search-edit-tags))
-        (should (member "fresh-tag" (synaxis-db-get-tags id)))))))
+   (let ((id (synaxis-tests--seed-entry
+              "https://example.com/e" "1" "T" 1.0 nil)))
+     (let ((synaxis-search-default-filter ""))
+       (synaxis-search))
+     (with-current-buffer "*synaxis*"
+       (goto-char (point-min))
+       (cl-letf (((symbol-function 'completing-read-multiple)
+                  (lambda (&rest _) (list "fresh-tag"))))
+         (call-interactively 'synaxis-search-edit-tags))
+       (should (member "fresh-tag" (synaxis-db-get-tags id)))))))
 
 (ert-deftest synaxis-search-test-edit-tags-empty-input-noop ()
   (synaxis-tests--with-tmp
-    (let ((id (synaxis-tests--seed-entry
-               "https://example.com/e" "1" "T" 1.0 t)))
-      (let ((synaxis-search-default-filter ""))
-        (synaxis-search))
-      (with-current-buffer "*synaxis*"
-        (goto-char (point-min))
-        (cl-letf (((symbol-function 'completing-read-multiple)
-                   (lambda (&rest _) nil)))
-          (call-interactively 'synaxis-search-edit-tags))
-        (should (equal '("unread") (synaxis-db-get-tags id)))))))
+   (let ((id (synaxis-tests--seed-entry
+              "https://example.com/e" "1" "T" 1.0 t)))
+     (let ((synaxis-search-default-filter ""))
+       (synaxis-search))
+     (with-current-buffer "*synaxis*"
+       (goto-char (point-min))
+       (cl-letf (((symbol-function 'completing-read-multiple)
+                  (lambda (&rest _) nil)))
+         (call-interactively 'synaxis-search-edit-tags))
+       (should (equal '("unread") (synaxis-db-get-tags id)))))))
 
 (ert-deftest synaxis-search-test-tag-candidates-marks-current-with-minus ()
   (synaxis-tests--with-tmp
-    (let ((id (synaxis-tests--seed-entry
-               "https://example.com/c" "1" "T" 1.0 t)))
-      (synaxis-db-add-tag id "alpha")
-      ;; Register an unattached tag too.
-      (let ((db (synaxis-db--ensure-open)))
-        (sqlite-execute db "INSERT INTO tags (tag) VALUES ('beta');"))
-      (let ((cands (synaxis-search--tag-candidates id)))
-        (should (member "-alpha"  cands))
-        (should (member "-unread" cands))
-        (should (member "+beta"   cands))))))
+   (let ((id (synaxis-tests--seed-entry
+              "https://example.com/c" "1" "T" 1.0 t)))
+     (synaxis-db-add-tag id "alpha")
+     ;; Register an unattached tag too.
+     (let ((db (synaxis-db--ensure-open)))
+       (sqlite-execute db "INSERT INTO tags (tag) VALUES ('beta');"))
+     (let ((cands (synaxis-search--tag-candidates id)))
+       (should (member "-alpha"  cands))
+       (should (member "-unread" cands))
+       (should (member "+beta"   cands))))))
 
 (ert-deftest synaxis-search-test-edit-feed-picks-row-url ()
   "`synaxis-search-edit-feed' passes the row's feed-url to the editor."
@@ -339,7 +339,7 @@ after, it uses the registry override."
     "https://example.com/b" "1" "T" 1.0 t)
    (synaxis-db-upsert-entry
     '(:feed-url "https://example.com/b" :source-id "1"
-                :title "T" :link "https://example.com/article" :date 1.0))
+                :title "T" :link "https://example.com/article" :date "1970-01-01T00:00:01Z"))
    (let ((synaxis-search-default-filter ""))
      (synaxis-search))
    (with-current-buffer "*synaxis*"
@@ -411,23 +411,6 @@ and point should land at the start of the buffer."
        (synaxis-search--auto-refresh)
        (should-not (equal id-a (tabulated-list-get-id)))
        (should (= (point) (point-min)))))))
-
-;;; Regex filter end-to-end
-
-(ert-deftest synaxis-search-test-refresh-applies-regex-filter ()
-  "Setting the filter to `title:/^A/' restricts the buffer to A-titled rows."
-  (synaxis-tests--with-tmp
-   (synaxis-tests--seed-entry "https://example.com/x" "1" "Alpha"  1.0 t)
-   (synaxis-tests--seed-entry "https://example.com/x" "2" "Bravo"  2.0 t)
-   (synaxis-tests--seed-entry "https://example.com/x" "3" "Alaska" 3.0 t)
-   (let ((synaxis-search-default-filter "title:/^A/"))
-     (synaxis-search))
-   (with-current-buffer "*synaxis*"
-     (should (= 2 (length tabulated-list-entries)))
-     (dolist (row tabulated-list-entries)
-       (let* ((id (car row))
-              (entry (synaxis-db-get-entry id)))
-         (should (string-match-p "^A" (plist-get entry :title))))))))
 
 (provide 'synaxis-search-tests)
 ;;; synaxis-search-tests.el ends here

@@ -140,9 +140,7 @@
 (ert-deftest synaxis-scrape-test-extract-date-from-datetime-attr ()
   (let* ((dom (synaxis-scrape-tests--dom "scrape-article.html"))
          (date (synaxis-scrape--extract-date dom "time")))
-    (should (numberp date))
-    (should (= date (float-time (encode-time (parse-time-string
-                                              "2024-05-12T09:00:00Z")))))))
+    (should (equal "2024-05-12T09:00:00Z" date))))
 
 (ert-deftest synaxis-scrape-test-extract-date-nil-selector ()
   (should-not (synaxis-scrape--extract-date 'whatever nil)))
@@ -153,19 +151,19 @@ Mirrors the Medscape pattern: `<span class=\"article-date\"> May 15, 2026</span>
 Also: a second empty span with the same class is skipped."
   (let* ((dom (synaxis-scrape-tests--dom "scrape-medscape-like.html"))
          (date (synaxis-scrape--extract-date dom ".article-date")))
-    (should (numberp date))
-    (let ((d (decode-time (seconds-to-time date))))
-      (should (= 2026 (decoded-time-year d)))
-      (should (= 5    (decoded-time-month d)))
-      (should (= 15   (decoded-time-day d))))))
+    (should (stringp date))
+    ;; Date-only inputs encode at local midnight; UTC representation may
+    ;; land on the previous day depending on the test runner's TZ.  Day
+    ;; window is +/- 1.
+    (should (string-match-p "\\`2026-05-1[45]" date))))
 
 (ert-deftest synaxis-scrape-test-parse-time-loose-date-only ()
   "Date strings without a time component encode to start-of-day."
   (let ((t1 (synaxis-scrape--parse-time-loose "May 15, 2026"))
         (t2 (synaxis-scrape--parse-time-loose " May 15, 2026")))
-    (should (numberp t1))
-    (should (numberp t2))
-    (should (= t1 t2))))
+    (should (stringp t1))
+    (should (stringp t2))
+    (should (equal t1 t2))))
 
 ;;; Content cleanup
 
@@ -285,7 +283,7 @@ Also: a second empty span with the same class is skipped."
                                             synaxis-tests--fixtures-dir))
                          (buffer-string)))
          (entries (list (list :link "https://example.com/p/1"
-                              :title "T" :date 1.0)))
+                              :title "T" :date "1970-01-01T00:00:01Z")))
          out)
     (cl-letf (((symbol-function 'url-queue-retrieve)
                (lambda (_url cb cbargs &rest _)
@@ -307,7 +305,7 @@ Also: a second empty span with the same class is skipped."
   "All N callbacks must fire before done-callback runs."
   (let* ((entries (cl-loop for i below 4
                            collect (list :link (format "https://x.example/%d" i)
-                                         :title "T" :date 1.0)))
+                                         :title "T" :date "1970-01-01T00:00:01Z")))
          out fired)
     (cl-letf (((symbol-function 'url-queue-retrieve)
                (lambda (_url cb cbargs &rest _)

@@ -68,12 +68,17 @@ Cleans up the DB connection and temp directory on unwind."
 
 (defun synaxis-tests--seed-entry (feed-url source-id title date &optional unread)
   "Insert a feed (titled \"F\") plus one entry under FEED-URL.
-SOURCE-ID, TITLE, and DATE go into the entry.  When UNREAD is
-non-nil the entry is tagged `unread'.  Returns the new entry id."
+SOURCE-ID, TITLE, and DATE go into the entry.  DATE may be an ISO
+string (passed through) or a number, treated as Unix epoch and
+converted so legacy float-based tests keep working.  When UNREAD
+is non-nil the entry is tagged `unread'.  Returns the new entry id."
   (synaxis-db-add-feed feed-url '(:title "F"))
-  (let ((id (synaxis-db-upsert-entry
-             (list :feed-url feed-url :source-id source-id
-                   :title title :date date))))
+  (let* ((date-iso (if (numberp date)
+                       (format-time-string "%Y-%m-%dT%H:%M:%SZ" date t)
+                     date))
+         (id (synaxis-db-upsert-entry
+              (list :feed-url feed-url :source-id source-id
+                    :title title :date date-iso))))
     (when unread (synaxis-db-add-tag id "unread"))
     id))
 

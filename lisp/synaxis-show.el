@@ -25,6 +25,7 @@
 (require 'shr)
 (require 'keymap-popup)
 (require 'synaxis-db)
+(require 'parse-time)
 
 (declare-function synaxis-search-refresh "synaxis-search" ())
 
@@ -75,9 +76,12 @@ and plist-preview render paths.")
           (propertize
            (format "%s -- %s"
                    (or (plist-get entry :feed-title) "")
-                   (format-time-string
-                    "%Y-%m-%d %H:%M"
-                    (seconds-to-time (or (plist-get entry :date) 0))))
+                   (let ((date-iso (plist-get entry :date)))
+                     (if date-iso
+                         (format-time-string
+                          "%Y-%m-%d %H:%M"
+                          (parse-iso8601-time-string date-iso))
+                       "")))
            'face 'synaxis-show-meta-face)
           "\n\n")
   (let ((content (plist-get entry :content))

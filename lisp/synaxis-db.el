@@ -83,7 +83,7 @@ adding a schema change.")
        source_id    TEXT    NOT NULL,
        title        TEXT    NOT NULL DEFAULT '',
        link         TEXT,
-       date         REAL    NOT NULL,
+       date         TEXT    NOT NULL,
        content      TEXT,
        content_type TEXT,
        meta         TEXT,
@@ -446,29 +446,21 @@ Returns the entry's primary key."
                     (list id)))))
     (and row (synaxis-db--row-to-entry-plist row))))
 
-(defun synaxis-db-list-entries (where params &optional limit post-filter)
+(defun synaxis-db-list-entries (where params &optional limit)
   "Return entries matching WHERE / PARAMS.
 WHERE is a SQL fragment over aliases `e' (entries) and `f' (feeds);
 nil means no filter.  PARAMS is its bind list.  LIMIT, when non-nil,
-caps the result count.  POST-FILTER, when non-nil, is a predicate
-\(entry) -> boolean applied in Elisp after the SQL query; the SQL
-LIMIT is suppressed when POST-FILTER is given, and LIMIT is applied
-after filtering instead.  Results are ordered by date descending."
+caps the result count.  Results are ordered by date descending."
   (let* ((db (synaxis-db--ensure-open))
          (sql (concat "SELECT " synaxis-db--entry-columns
                       " FROM entries e
                         JOIN feeds f ON f.url = e.feed_url
                         WHERE " (or where "1=1")
                       " ORDER BY e.date DESC"
-                      (if (and limit (not post-filter))
-                          (format " LIMIT %d" limit) "")
-                      ";"))
-         (rows (mapcar #'synaxis-db--row-to-entry-plist
-                       (sqlite-select db sql params))))
-    (if post-filter
-        (let ((kept (seq-filter post-filter rows)))
-          (if limit (seq-take kept limit) kept))
-      rows)))
+                      (if limit (format " LIMIT %d" limit) "")
+                      ";")))
+    (mapcar #'synaxis-db--row-to-entry-plist
+            (sqlite-select db sql params))))
 
 (defun synaxis-db-delete-entry (id)
   "Delete the entry with ID.  Cascades to tags."

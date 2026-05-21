@@ -24,7 +24,7 @@
 ;;   (:source-id   STRING        ; non-nil; synthesised from hash if absent
 ;;    :title       STRING        ; "" if missing
 ;;    :link        STRING-OR-NIL
-;;    :date        FLOAT         ; float-time
+;;    :date        STRING        ; ISO 8601, UTC, "YYYY-MM-DDTHH:MM:SSZ"
 ;;    :content     STRING-OR-NIL
 ;;    :content-type "html" | "text" | nil
 ;;    :meta        PLIST-OR-NIL)
@@ -42,31 +42,36 @@
 
 ;;; Date helpers
 
+(defun synaxis-parse--time-to-iso (time)
+  "Format Emacs TIME value as canonical UTC ISO 8601 string.
+Result is `YYYY-MM-DDTHH:MM:SSZ' (literal Z, second precision)."
+  (format-time-string "%Y-%m-%dT%H:%M:%SZ" time t))
+
 (defun synaxis-parse--decode-iso8601 (s)
-  "Parse S as ISO 8601 datetime, returning float-time or nil."
+  "Parse S as ISO 8601 datetime; return canonical ISO string or nil."
   (and (stringp s)
        (not (string-empty-p s))
        (condition-case nil
-           (float-time (parse-iso8601-time-string s))
+           (synaxis-parse--time-to-iso (parse-iso8601-time-string s))
          (error nil))))
 
 (defun synaxis-parse--decode-rfc822 (s)
-  "Parse S as RFC 822/2822 datetime, returning float-time or nil."
+  "Parse S as RFC 822/2822 datetime; return canonical ISO string or nil."
   (and (stringp s)
        (not (string-empty-p s))
        (condition-case nil
            (let ((decoded (parse-time-string s)))
              (and (decoded-time-year decoded)
-                  (float-time (encode-time decoded))))
+                  (synaxis-parse--time-to-iso (encode-time decoded))))
          (error nil))))
 
 (defun synaxis-parse--decode-date (s)
-  "Best-effort parse of date string S.
+  "Best-effort parse of date string S, returning a canonical ISO string.
 Tries ISO 8601 then RFC 822; falls back to the current time on
 failure, so callers never need to handle a nil date."
   (or (synaxis-parse--decode-iso8601 s)
       (synaxis-parse--decode-rfc822 s)
-      (float-time)))
+      (synaxis-parse--time-to-iso (current-time))))
 
 ;;; URL resolution
 
