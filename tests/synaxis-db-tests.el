@@ -44,9 +44,9 @@
      (should (= 51 saw))
      (should (= 51 (caar (sqlite-select db "SELECT version FROM schema_version;")))))))
 
-;;; v2 schema and migration
+;;; Tags registry
 
-(ert-deftest synaxis-db-test-v2-tags-table-present ()
+(ert-deftest synaxis-db-test-tags-table-present ()
   "Fresh install has the `tags' registry table."
   (synaxis-tests--with-tmp
    (let ((db (synaxis-db--ensure-open)))
@@ -91,45 +91,6 @@
      (let ((db (synaxis-db--ensure-open)))
        (sqlite-execute db "DELETE FROM tags WHERE tag = 'tmp';"))
      (should-not (member "tmp" (synaxis-db-get-tags id))))))
-
-(ert-deftest synaxis-db-test-migration-1-to-2-preserves-data ()
-  "Seeding a v1 DB then bootstrapping migrates entry_tags rows intact."
-  (synaxis-tests--with-tmp
-   ;; Build a v1 database manually, side-stepping the bootstrap.
-   (let* ((file (expand-file-name "v1.db"
-                                  (file-name-directory synaxis-db-file)))
-          (synaxis-db-file file)
-          (db (sqlite-open file)))
-     (sqlite-pragma db "foreign_keys = ON")
-     (sqlite-execute db "CREATE TABLE schema_version (version INTEGER NOT NULL);")
-     (sqlite-execute db "INSERT INTO schema_version (version) VALUES (1);")
-     (dolist (stmt synaxis-db--v1-statements)
-       (sqlite-execute db stmt))
-     ;; Seed feed + entry + two tags.
-     (sqlite-execute db "INSERT INTO feeds (url) VALUES ('https://x');")
-     (sqlite-execute db
-                     "INSERT INTO entries (feed_url, source_id, date)
-                      VALUES ('https://x', 'a', '1970-01-01T00:00:01Z');")
-     (sqlite-execute db
-                     "INSERT INTO entry_tags (entry_id, tag) VALUES (1, 'unread');")
-     (sqlite-execute db
-                     "INSERT INTO entry_tags (entry_id, tag) VALUES (1, 'rust');")
-     (sqlite-close db)
-     ;; Now reopen via the synaxis bootstrap, which should migrate to v2.
-     (setq synaxis-db--connection nil)
-     (let ((db (synaxis-db--ensure-open)))
-       (should (= synaxis-db--schema-target-version
-                  (caar (sqlite-select db "SELECT version FROM schema_version;"))))
-       (should (equal '(("rust") ("unread"))
-                      (sqlite-select
-                       db "SELECT tag FROM tags ORDER BY tag;")))
-       ;; system flag set for `unread' only.
-       (should (= 1 (caar (sqlite-select
-                           db "SELECT system FROM tags WHERE tag = 'unread';"))))
-       (should (= 0 (caar (sqlite-select
-                           db "SELECT system FROM tags WHERE tag = 'rust';"))))
-       ;; entry_tags rows preserved.
-       (should (= 2 (caar (sqlite-select db "SELECT COUNT(*) FROM entry_tags;"))))))))
 
 ;;; Bootstrap
 

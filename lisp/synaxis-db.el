@@ -61,7 +61,7 @@ entries, auto-save) honours this flag.  Defined here because
 (defvar synaxis-db--connection nil
   "Cached SQLite connection, or nil if not yet opened.")
 
-(defconst synaxis-db--schema-target-version 3
+(defconst synaxis-db--schema-target-version 1
   "Schema version the bootstrapper migrates databases up to.
 Bump this and append a new entry to `synaxis-db--migrations' when
 adding a schema change.")
@@ -91,79 +91,41 @@ adding a schema change.")
      ) STRICT;"
     "CREATE INDEX IF NOT EXISTS entries_date ON entries (date DESC);"
     "CREATE INDEX IF NOT EXISTS entries_feed ON entries (feed_url);"
+    "CREATE TABLE IF NOT EXISTS tags (
+       tag         TEXT    PRIMARY KEY,
+       description TEXT,
+       face        TEXT,
+       system      INTEGER NOT NULL DEFAULT 0,
+       meta        TEXT
+     ) STRICT;"
+    "INSERT OR IGNORE INTO tags (tag, system) VALUES ('unread', 1);"
     "CREATE TABLE IF NOT EXISTS entry_tags (
        entry_id INTEGER NOT NULL REFERENCES entries(id) ON DELETE CASCADE,
-       tag      TEXT    NOT NULL,
+       tag      TEXT    NOT NULL REFERENCES tags(tag)
+                                 ON DELETE CASCADE
+                                 ON UPDATE CASCADE,
        PRIMARY KEY (entry_id, tag)
      ) STRICT;"
-    "CREATE INDEX IF NOT EXISTS entry_tags_tag ON entry_tags (tag);")
-  "DDL statements for v1 (baseline feeds/entries/entry_tags schema).")
+    "CREATE INDEX IF NOT EXISTS entry_tags_tag ON entry_tags (tag);"
+    "CREATE TABLE IF NOT EXISTS scrape_rules (
+       feed_url         TEXT PRIMARY KEY REFERENCES feeds(url) ON DELETE CASCADE,
+       item_selector    TEXT NOT NULL,
+       title_selector   TEXT,
+       link_selector    TEXT,
+       date_selector    TEXT,
+       date_format      TEXT,
+       content_selector TEXT,
+       meta             TEXT
+     ) STRICT;")
+  "DDL statements for the v1 baseline schema.")
 
 (defun synaxis-db--migration-0-to-1 (db)
   "Apply the v1 baseline schema to DB."
   (dolist (stmt synaxis-db--v1-statements)
     (sqlite-execute db stmt)))
 
-(defun synaxis-db--migration-1-to-2 (db)
-  "Add the `tags' registry and rewrite `entry_tags' with an FK to it.
-Populates `tags' from existing distinct values in `entry_tags' and
-marks `unread' as a system tag."
-  (sqlite-execute
-   db
-   "CREATE TABLE tags (
-      tag         TEXT    PRIMARY KEY,
-      description TEXT,
-      face        TEXT,
-      system      INTEGER NOT NULL DEFAULT 0,
-      meta        TEXT
-    ) STRICT;")
-  (sqlite-execute
-   db
-   "INSERT INTO tags (tag, system)
-    SELECT DISTINCT tag,
-           CASE WHEN tag = 'unread' THEN 1 ELSE 0 END
-    FROM entry_tags;")
-  ;; Always seed `unread' as a system tag (fresh installs have nothing
-  ;; in entry_tags to migrate).
-  (sqlite-execute db "INSERT OR IGNORE INTO tags (tag, system) VALUES ('unread', 1);")
-  (sqlite-execute db "UPDATE tags SET system = 1 WHERE tag = 'unread';")
-  (sqlite-execute
-   db
-   "CREATE TABLE entry_tags_new (
-      entry_id INTEGER NOT NULL REFERENCES entries(id) ON DELETE CASCADE,
-      tag      TEXT    NOT NULL REFERENCES tags(tag)
-                                ON DELETE CASCADE
-                                ON UPDATE CASCADE,
-      PRIMARY KEY (entry_id, tag)
-    ) STRICT;")
-  (sqlite-execute
-   db
-   "INSERT INTO entry_tags_new (entry_id, tag)
-    SELECT entry_id, tag FROM entry_tags;")
-  (sqlite-execute db "DROP TABLE entry_tags;")
-  (sqlite-execute db "ALTER TABLE entry_tags_new RENAME TO entry_tags;")
-  (sqlite-execute db "CREATE INDEX entry_tags_tag ON entry_tags (tag);"))
-
-(defun synaxis-db--migration-2-to-3 (db)
-  "Add the `scrape_rules' table for v0.2 synthetic feeds.
-Was specified in DESIGN.md but missing from the v1 baseline."
-  (sqlite-execute
-   db
-   "CREATE TABLE IF NOT EXISTS scrape_rules (
-      feed_url         TEXT PRIMARY KEY REFERENCES feeds(url) ON DELETE CASCADE,
-      item_selector    TEXT NOT NULL,
-      title_selector   TEXT,
-      link_selector    TEXT,
-      date_selector    TEXT,
-      date_format      TEXT,
-      content_selector TEXT,
-      meta             TEXT
-    ) STRICT;"))
-
 (defconst synaxis-db--migrations
-  '((1 . synaxis-db--migration-0-to-1)
-    (2 . synaxis-db--migration-1-to-2)
-    (3 . synaxis-db--migration-2-to-3))
+  '((1 . synaxis-db--migration-0-to-1))
   "Alist of (TARGET-VERSION . FUNCTION).
 FUNCTION takes the open DB and moves the schema from TARGET-VERSION-1
 to TARGET-VERSION.  Each call is wrapped in its own transaction by
