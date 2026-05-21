@@ -7,8 +7,9 @@ TESTS         := $(wildcard tests/synaxis*-tests.el)
 
 ifndef EMACS_CMD
 GUIX := $(shell command -v guix 2>/dev/null)
+GUIX_FLAGS ?=
 ifdef GUIX
-GUIX_SHELL := guix shell --pure -D -f guix.scm emacs-next --
+GUIX_SHELL := guix shell $(GUIX_FLAGS) --pure -D -f guix.scm emacs-next --
 EMACS_CMD  := $(GUIX_SHELL) $(EMACS)
 LOAD       := -L lisp
 else
