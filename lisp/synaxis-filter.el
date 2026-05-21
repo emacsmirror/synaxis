@@ -33,27 +33,8 @@
 ;; meaningless and ignored.  Bare-word negation (`-WORD') is not
 ;; supported in v0.1.1 -- use `-title:' or `-content:' instead.
 ;;
-;; Regex tokens (notmuch-style slash-delimited):
-;;
-;;   title:/RE/    -title:/RE/      regex on entry title
-;;   content:/RE/  -content:/RE/    regex on entry content
-;;   feed:/RE/     -feed:/RE/       regex on feed title
-;;   /RE/          -/RE/            regex on title OR content
-;;
-;; RE is Emacs regex (see `string-match-p').  All regex matches are
-;; case-insensitive, mirroring the LIKE `COLLATE NOCASE' behaviour.
-;; The closing slash is required; `title:/foo' (no close) falls
-;; through to a literal LIKE token.  Quoting works inside slashes:
-;; `title:"/foo bar/"'.  Invalid patterns raise `user-error' at
-;; parse time.
-;;
-;; SQLite cannot push regex down (Emacs 29's sqlite-* API lacks
-;; sqlite_create_function), so regex is applied as an Elisp
-;; post-filter on rows returned by the SQL stage.  When a regex
-;; token is present the SQL LIMIT is suppressed and LIMIT is applied
-;; after filtering instead.  Cost is proportional to rows matching
-;; the SQL predicates; narrow with `tag:', `feed:', or `date:'
-;; before adding `/RE/' for best performance.
+;; Multi-word values go in double quotes: `title:"drug something"'
+;; matches via SQL LIKE `%drug something%' (case-insensitive).
 
 ;;; Code:
 
@@ -169,28 +150,6 @@ Recognised units: s, m, h, d, w, months, y.  nil otherwise."
       (synaxis-filter--absolute-date s)
       (synaxis-filter--relative-date s)))
 
-;;; Regex token helpers
-
-(defun synaxis-filter--regex-shape-p (s)
-  "Return non-nil when S is `/REGEX/' with a non-empty body.
-Requires both leading and trailing slash and at least one char between."
-  (and (stringp s)
-       (> (length s) 2)
-       (eq (aref s 0) ?/)
-       (eq (aref s (1- (length s))) ?/)))
-
-(defun synaxis-filter--strip-slashes (s)
-  "Return S with one leading and one trailing slash removed."
-  (substring s 1 (1- (length s))))
-
-(defun synaxis-filter--validate-regex (pattern)
-  "Probe PATTERN with `string-match-p'.
-Return PATTERN on success; signal `user-error' on invalid regex."
-  (condition-case err
-      (progn (string-match-p pattern "") pattern)
-    (invalid-regexp
-     (user-error "Invalid regex /%s/: %s" pattern (cadr err)))))
-
 (defun synaxis-filter-parse-date-spec (s)
   "Parse date spec S into a plist `(:from F :to T)' or nil.
 F and T are float-time bounds; either may be nil (open end).
@@ -214,21 +173,11 @@ Supports ranges of the form LO..HI, LO.., and ..HI."
 
 (defun synaxis-filter--token-for (key val negated)
   "Build a token cell for KEY=VAL, optionally NEGATED.
-For `title', `content', and `feed', a VAL shaped `/RE/' produces a
-regex-FIELD (or not-regex-FIELD) cell with the stripped, validated
-pattern.  `tag' values are always treated as literal strings."
+`feed', `title', and `content' values match via SQL LIKE
+`%VAL%' (case-insensitive)."
   (pcase key
     ((or 'feed 'title 'content)
-     (let* ((regex? (synaxis-filter--regex-shape-p val))
-            (pat (if regex?
-                     (synaxis-filter--validate-regex
-                      (synaxis-filter--strip-slashes val))
-                   val))
-            (sym (intern (format "%s%s%s"
-                                 (if negated "not-" "")
-                                 (if regex? "regex-" "")
-                                 key))))
-       (cons sym pat)))
+     (cons (intern (format "%s%s" (if negated "not-" "") key)) val))
     ('tag   (cons (if negated 'not-tag 'tag) val))
     ('date  (and (not negated)
                  (let ((spec (synaxis-filter-parse-date-spec val)))
@@ -239,18 +188,13 @@ pattern.  `tag' values are always treated as literal strings."
 
 (defun synaxis-filter--classify-prefixed (tok negated)
   "Classify TOK as a `prefix:value' token.
-If TOK has no `:', treat as bare word, bare regex (when `/RE/'-shaped),
-or drop when NEGATED and not regex-shaped."
+If TOK has no `:', treat as a bare word, or drop when NEGATED."
   (cond
    ((string-match "\\`\\([a-z]+\\):\\(.+\\)\\'" tok)
     (synaxis-filter--token-for
      (intern (match-string 1 tok))
      (match-string 2 tok)
      negated))
-   ((synaxis-filter--regex-shape-p tok)
-    (let ((pat (synaxis-filter--validate-regex
-                (synaxis-filter--strip-slashes tok))))
-      (cons (if negated 'not-regex-text 'regex-text) pat)))
    (negated nil)              ;; `-WORD' unsupported
    (t (cons 'text tok))))
 
@@ -297,40 +241,9 @@ inside quotes is preserved.  See `synaxis-filter--tokenize'."
 
 ;;; Compiler
 
-(defun synaxis-filter--regex-match (pattern s)
-  "Case-insensitive `string-match-p' of PATTERN on S.
-Returns nil when S is nil rather than erroring."
-  (and (stringp s)
-       (let ((case-fold-search t))
-         (string-match-p pattern s))))
-
-(defconst synaxis-filter--regex-kinds
-  '(regex-title     not-regex-title
-		    regex-content   not-regex-content
-		    regex-feed      not-regex-feed
-		    regex-text      not-regex-text)
-  "Token kinds that compile into a `:post-filter' predicate.")
-
-(defun synaxis-filter--regex-predicate (kind pattern)
-  "Return a single-token predicate for regex token KIND with PATTERN.
-KIND is one of the eight `regex-FIELD' / `not-regex-FIELD' symbols
-in `synaxis-filter--regex-kinds'.  Returned closure takes an entry
-plist; matches case-insensitively; nil field values are no match."
-  (pcase-let* ((`(,fields ,neg)
-                (pcase kind
-                  ('regex-title       '((:title) nil))
-                  ('not-regex-title   '((:title) t))
-                  ('regex-content     '((:content) nil))
-                  ('not-regex-content '((:content) t))
-                  ('regex-feed        '((:feed-title) nil))
-                  ('not-regex-feed    '((:feed-title) t))
-                  ('regex-text        '((:title :content) nil))
-                  ('not-regex-text    '((:title :content) t)))))
-    (lambda (e)
-      (let ((hit (cl-some
-                  (lambda (f) (synaxis-filter--regex-match pattern (plist-get e f)))
-                  fields)))
-        (if neg (not hit) hit)))))
+(defun synaxis-filter--iso (time)
+  "Format TIME (float epoch or Lisp time value) as canonical UTC ISO 8601."
+  (format-time-string "%Y-%m-%dT%H:%M:%SZ" time t))
 
 (defconst synaxis-filter--exists-sql
   "EXISTS (SELECT 1 FROM entry_tags t WHERE t.entry_id = e.id AND t.tag = ?)")
@@ -350,26 +263,22 @@ Negated when NEGATED."
 
 (defun synaxis-filter-compile (tokens)
   "Compile parsed TOKENS into a plist.
-Returns (:where S :params P :limit L :post-filter PRED-OR-NIL).
-PRED-OR-NIL is a closure (entry) -> boolean composed AND-wise from
-all regex tokens, or nil when no regex tokens are present."
-  (let (parts params limit post-preds)
+Returns (:where S :params P :limit L)."
+  (let (parts params limit)
     (cl-flet ((emit (clause &rest ps)
                 (push clause parts)
-                (dolist (p ps) (push p params)))
-              (emit-pred (kind val)
-                (push (synaxis-filter--regex-predicate kind val) post-preds)))
+                (dolist (p ps) (push p params))))
       (dolist (tok tokens)
         (pcase-exhaustive (car tok)
           ('tag         (emit synaxis-filter--exists-sql     (cdr tok)))
           ('not-tag     (emit synaxis-filter--not-exists-sql (cdr tok)))
-          ('feed        (pcase-let ((`(,c . ,p) (synaxis-filter--like-token "f.title"   (cdr tok) nil)))
+          ('feed        (pcase-let ((`(,c . ,p) (synaxis-filter--like-token "f.title" (cdr tok) nil)))
                           (emit c p)))
-          ('not-feed    (pcase-let ((`(,c . ,p) (synaxis-filter--like-token "f.title"   (cdr tok) t)))
+          ('not-feed    (pcase-let ((`(,c . ,p) (synaxis-filter--like-token "f.title" (cdr tok) t)))
                           (emit c p)))
-          ('title       (pcase-let ((`(,c . ,p) (synaxis-filter--like-token "e.title"   (cdr tok) nil)))
+          ('title       (pcase-let ((`(,c . ,p) (synaxis-filter--like-token "e.title" (cdr tok) nil)))
                           (emit c p)))
-          ('not-title   (pcase-let ((`(,c . ,p) (synaxis-filter--like-token "e.title"   (cdr tok) t)))
+          ('not-title   (pcase-let ((`(,c . ,p) (synaxis-filter--like-token "e.title" (cdr tok) t)))
                           (emit c p)))
           ('content     (pcase-let ((`(,c . ,p) (synaxis-filter--like-token "e.content" (cdr tok) nil)))
                           (emit c p)))
@@ -382,29 +291,18 @@ all regex tokens, or nil when no regex tokens are present."
           ('date
            (let ((from (plist-get (cdr tok) :from))
                  (to   (plist-get (cdr tok) :to)))
-             (when from (emit "e.date >= ?" from))
-             (when to   (emit "e.date < ?"  to))))
-          ('limit (setq limit (cdr tok)))
-          ((and kind (guard (memq kind synaxis-filter--regex-kinds)))
-           (emit-pred kind (cdr tok))))))
-    (list :where       (if parts (string-join (nreverse parts) " AND ") "1=1")
-          :params      (nreverse params)
-          :limit       limit
-          :post-filter (and post-preds
-                            (let ((preds (nreverse post-preds)))
-                              (lambda (e) (cl-every (lambda (p) (funcall p e)) preds)))))))
+             (when from (emit "e.date >= ?" (synaxis-filter--iso from)))
+             (when to   (emit "e.date < ?"  (synaxis-filter--iso to)))))
+          ('limit (setq limit (cdr tok))))))
+    (list :where  (if parts (string-join (nreverse parts) " AND ") "1=1")
+          :params (nreverse params)
+          :limit  limit)))
 
 ;;; Completions
-
-(defcustom synaxis-filter-title-completion-limit 200
-  "Maximum number of entry titles offered as `title:' completions."
-  :type 'integer
-  :group 'synaxis)
 
 (defconst synaxis-filter--static-completions
   '("tag:" "-tag:" "feed:" "-feed:" "title:" "-title:"
     "content:" "-content:" "date:" "limit:"
-    "title:/" "-title:/" "content:/" "-content:/" "feed:/" "-feed:/" "/" "-/"
     "date:today" "date:yesterday"
     "date:thisweek" "date:thismonth" "date:thisyear"
     "date:7d" "date:30d" "date:1y")
@@ -427,16 +325,6 @@ Reads from the `tags' registry (schema v2+); no DISTINCT scan."
                  WHERE title IS NOT NULL AND title <> ''
                  ORDER BY title COLLATE NOCASE;"))))
 
-(defun synaxis-filter--db-recent-entry-titles (limit)
-  "Return the LIMIT most-recent distinct entry titles."
-  (let ((db (synaxis-db--ensure-open)))
-    (mapcar #'car
-            (sqlite-select
-             db "SELECT DISTINCT title FROM entries
-                 WHERE title IS NOT NULL AND title <> ''
-                 ORDER BY date DESC LIMIT ?;"
-             (list limit)))))
-
 (defun synaxis-filter--quote-if-needed (s)
   "Wrap S in double quotes when it contains whitespace."
   (if (and (stringp s) (string-match-p "[ \t]" s))
@@ -450,17 +338,16 @@ Reads from the `tags' registry (schema v2+); no DISTINCT scan."
           values))
 
 (defun synaxis-filter-completions ()
-  "Return a list of completion candidate strings for the filter prompt."
+  "Return a list of completion candidate strings for the filter prompt.
+Entry titles are intentionally omitted; `title:' matches via SQL
+LIKE `%VAL%' so the value is free text the user types directly."
   (let ((tags  (synaxis-filter--db-tags))
-        (feeds (synaxis-filter--db-feed-titles))
-        (titles (synaxis-filter--db-recent-entry-titles
-                 synaxis-filter-title-completion-limit)))
+        (feeds (synaxis-filter--db-feed-titles)))
     (append synaxis-filter--static-completions
             (synaxis-filter--prefix-each "tag:"   tags)
             (synaxis-filter--prefix-each "-tag:"  tags)
             (synaxis-filter--prefix-each "feed:"  feeds)
-            (synaxis-filter--prefix-each "-feed:" feeds)
-            (synaxis-filter--prefix-each "title:" titles))))
+            (synaxis-filter--prefix-each "-feed:" feeds))))
 
 (provide 'synaxis-filter)
 ;;; synaxis-filter.el ends here

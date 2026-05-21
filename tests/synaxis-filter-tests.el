@@ -132,21 +132,22 @@
          (c (synaxis-filter-compile (list (cons 'date spec)))))
     (should (string-match-p "e\\.date >= \\?" (plist-get c :where)))
     (should (string-match-p "e\\.date < \\?"  (plist-get c :where)))
-    (should (equal '(1000.0 2000.0) (plist-get c :params)))))
+    (should (equal '("1970-01-01T00:16:40Z" "1970-01-01T00:33:20Z")
+                   (plist-get c :params)))))
 
 (ert-deftest synaxis-filter-test-compile-date-from-only ()
   (let* ((spec '(:from 1000.0 :to nil))
          (c (synaxis-filter-compile (list (cons 'date spec)))))
     (should (string-match-p "e\\.date >= \\?" (plist-get c :where)))
     (should-not (string-match-p "e\\.date < " (plist-get c :where)))
-    (should (equal '(1000.0) (plist-get c :params)))))
+    (should (equal '("1970-01-01T00:16:40Z") (plist-get c :params)))))
 
 (ert-deftest synaxis-filter-test-compile-date-to-only ()
   (let* ((spec '(:from nil :to 2000.0))
          (c (synaxis-filter-compile (list (cons 'date spec)))))
     (should-not (string-match-p "e\\.date >= " (plist-get c :where)))
     (should (string-match-p "e\\.date < \\?" (plist-get c :where)))
-    (should (equal '(2000.0) (plist-get c :params)))))
+    (should (equal '("1970-01-01T00:33:20Z") (plist-get c :params)))))
 
 (ert-deftest synaxis-filter-test-compile-limit-sets-plist-key ()
   (should (= 25 (plist-get (synaxis-filter-compile '((limit . 25))) :limit))))
@@ -288,7 +289,7 @@
    (synaxis-db-add-feed "https://example.com/x")
    (let ((id (synaxis-db-upsert-entry
               '(:feed-url "https://example.com/x" :source-id "1"
-                          :title "T" :date 1.0))))
+                          :title "T" :date "1970-01-01T00:00:01Z"))))
      (synaxis-db-add-tag id "unread")
      (synaxis-db-add-tag id "starred"))
    (let ((c (synaxis-filter-completions)))
@@ -306,31 +307,17 @@
      (should (member "feed:Bravo" c))
      (should (member "-feed:Alpha" c)))))
 
-(ert-deftest synaxis-filter-test-completions-include-entry-titles ()
+(ert-deftest synaxis-filter-test-completions-omit-entry-titles ()
+  "Entry titles are not offered as completions: `title:' is free-text LIKE."
   (synaxis-tests--with-tmp
    (synaxis-db-add-feed "https://example.com/x")
    (synaxis-db-upsert-entry '(:feed-url "https://example.com/x" :source-id "1"
-                                        :title "Recent Post" :date 100.0))
+                                        :title "Recent Post" :date "1970-01-01T00:01:40Z"))
    (let ((c (synaxis-filter-completions)))
-     ;; Multi-word titles are emitted quoted so they round-trip
-     ;; through `synaxis-filter-parse'.
-     (should (member "title:\"Recent Post\"" c)))))
-
-(ert-deftest synaxis-filter-test-completions-respect-entry-title-limit ()
-  (synaxis-tests--with-tmp
-   (synaxis-db-add-feed "https://example.com/x")
-   (dotimes (i 50)
-     (synaxis-db-upsert-entry
-      `(:feed-url "https://example.com/x" :source-id ,(format "%d" i)
-                  :title ,(format "Entry %03d" i) :date ,(float i))))
-   (let* ((synaxis-filter-title-completion-limit 10)
-          (c (synaxis-filter-completions))
-          (titles (seq-filter (lambda (s)
-                                (and (string-prefix-p "title:" s)
-                                     (> (length s) 6)
-                                     (not (string-suffix-p "/" s))))
-                              c)))
-     (should (= 10 (length titles))))))
+     (should-not (member "title:\"Recent Post\"" c))
+     (should-not (member "title:Recent Post" c))
+     ;; The bare prefix is still offered.
+     (should (member "title:" c)))))
 
 ;;; Tokenizer (plan-09)
 
@@ -416,135 +403,11 @@
    (synaxis-db-add-feed "https://example.com/pm" '(:title "PubMed Trending"))
    (let ((id (synaxis-db-upsert-entry
               '(:feed-url "https://example.com/pm" :source-id "1"
-                          :title "A study" :date 100.0))))
+                          :title "A study" :date "1970-01-01T00:01:40Z"))))
      (let ((synaxis-tag-rules
             '((:filter "feed:\"PubMed Trending\"" :add ("medicine")))))
        (synaxis-tag-rules-apply-entry id))
      (should (member "medicine" (synaxis-db-get-tags id))))))
-
-;;; Regex token parsing
-
-(ert-deftest synaxis-filter-test-parse-title-regex ()
-  "`title:/^Re:/' yields a regex-title token with the pattern stripped of slashes."
-  (should (equal '((regex-title . "^Re:"))
-                 (synaxis-filter-parse "title:/^Re:/"))))
-
-(ert-deftest synaxis-filter-test-parse-not-title-regex ()
-  "`-title:/foo/' yields a not-regex-title token."
-  (should (equal '((not-regex-title . "foo"))
-                 (synaxis-filter-parse "-title:/foo/"))))
-
-(ert-deftest synaxis-filter-test-parse-content-regex ()
-  (should (equal '((regex-content . "bar"))
-                 (synaxis-filter-parse "content:/bar/"))))
-
-(ert-deftest synaxis-filter-test-parse-not-content-regex ()
-  (should (equal '((not-regex-content . "bar"))
-                 (synaxis-filter-parse "-content:/bar/"))))
-
-(ert-deftest synaxis-filter-test-parse-feed-regex ()
-  (should (equal '((regex-feed . "baz"))
-                 (synaxis-filter-parse "feed:/baz/"))))
-
-(ert-deftest synaxis-filter-test-parse-not-feed-regex ()
-  (should (equal '((not-regex-feed . "baz"))
-                 (synaxis-filter-parse "-feed:/baz/"))))
-
-(ert-deftest synaxis-filter-test-parse-bare-regex ()
-  "A bare `/foo|bar/' token yields a regex-text token."
-  (should (equal '((regex-text . "foo|bar"))
-                 (synaxis-filter-parse "/foo|bar/"))))
-
-(ert-deftest synaxis-filter-test-parse-bare-not-regex ()
-  "`-/foo/' yields a not-regex-text token."
-  (should (equal '((not-regex-text . "foo"))
-                 (synaxis-filter-parse "-/foo/"))))
-
-(ert-deftest synaxis-filter-test-parse-prefix-without-closing-slash-is-literal-like ()
-  "`title:/foo' (no closing slash) stays a literal LIKE token."
-  (should (equal '((title . "/foo"))
-                 (synaxis-filter-parse "title:/foo"))))
-
-(ert-deftest synaxis-filter-test-parse-quoted-regex-with-whitespace ()
-  "`title:\"/foo bar/\"' preserves the whitespace inside the pattern."
-  (should (equal '((regex-title . "foo bar"))
-                 (synaxis-filter-parse "title:\"/foo bar/\""))))
-
-(ert-deftest synaxis-filter-test-parse-invalid-regex-signals-user-error ()
-  "An unclosed character class raises `user-error' at parse time."
-  (should-error (synaxis-filter-parse "title:/[/") :type 'user-error))
-
-(ert-deftest synaxis-filter-test-parse-empty-slashes-not-regex ()
-  "`title://' is not a regex (empty pattern); falls through to literal LIKE."
-  (should (equal '((title . "//"))
-                 (synaxis-filter-parse "title://"))))
-
-;;; Regex compilation
-
-(ert-deftest synaxis-filter-test-compile-no-regex-omits-post-filter ()
-  "A compile of pure LIKE tokens yields nil :post-filter."
-  (let ((spec (synaxis-filter-compile '((title . "foo")))))
-    (should (null (plist-get spec :post-filter)))))
-
-(ert-deftest synaxis-filter-test-compile-regex-produces-post-filter ()
-  "A compile that includes a regex token yields a callable :post-filter."
-  (let ((spec (synaxis-filter-compile '((regex-title . "^A")))))
-    (should (functionp (plist-get spec :post-filter)))))
-
-(ert-deftest synaxis-filter-test-post-filter-matches-title-regex ()
-  "The compiled predicate matches a title against the pattern."
-  (let* ((spec (synaxis-filter-compile '((regex-title . "^A"))))
-         (pred (plist-get spec :post-filter)))
-    (should     (funcall pred (list :title "Alpha" :content "")))
-    (should-not (funcall pred (list :title "Bravo" :content "")))))
-
-(ert-deftest synaxis-filter-test-post-filter-matches-case-insensitively ()
-  "Regex matching is always case-insensitive."
-  (let* ((spec (synaxis-filter-compile '((regex-title . "rust"))))
-         (pred (plist-get spec :post-filter)))
-    (should (funcall pred (list :title "RUST is fun" :content "")))
-    (should (funcall pred (list :title "RuSt"        :content "")))))
-
-(ert-deftest synaxis-filter-test-post-filter-handles-negation ()
-  "not-regex-title inverts the match."
-  (let* ((spec (synaxis-filter-compile '((not-regex-title . "^A"))))
-         (pred (plist-get spec :post-filter)))
-    (should-not (funcall pred (list :title "Alpha" :content "")))
-    (should     (funcall pred (list :title "Bravo" :content "")))))
-
-(ert-deftest synaxis-filter-test-post-filter-content-regex ()
-  (let* ((spec (synaxis-filter-compile '((regex-content . "world"))))
-         (pred (plist-get spec :post-filter)))
-    (should     (funcall pred (list :title "x" :content "hello world")))
-    (should-not (funcall pred (list :title "x" :content "hello")))))
-
-(ert-deftest synaxis-filter-test-post-filter-feed-regex ()
-  (let* ((spec (synaxis-filter-compile '((regex-feed . "Daily"))))
-         (pred (plist-get spec :post-filter)))
-    (should     (funcall pred (list :feed-title "The Daily News")))
-    (should-not (funcall pred (list :feed-title "Weekly Digest")))))
-
-(ert-deftest synaxis-filter-test-post-filter-text-regex-matches-title-or-content ()
-  (let* ((spec (synaxis-filter-compile '((regex-text . "foo"))))
-         (pred (plist-get spec :post-filter)))
-    (should     (funcall pred (list :title "foo bar" :content "x")))
-    (should     (funcall pred (list :title "x"       :content "foo bar")))
-    (should-not (funcall pred (list :title "x"       :content "y")))))
-
-(ert-deftest synaxis-filter-test-post-filter-conjoins-multiple-regex-tokens ()
-  "Two regex tokens in the same spec are AND-ed."
-  (let* ((spec (synaxis-filter-compile
-                '((regex-title . "^A") (regex-content . "world"))))
-         (pred (plist-get spec :post-filter)))
-    (should     (funcall pred (list :title "Alpha" :content "hello world")))
-    (should-not (funcall pred (list :title "Alpha" :content "hello")))
-    (should-not (funcall pred (list :title "Bravo" :content "hello world")))))
-
-(ert-deftest synaxis-filter-test-post-filter-nil-strings-do-not-error ()
-  "A nil :title or :content does not blow up the predicate."
-  (let* ((spec (synaxis-filter-compile '((regex-text . "foo"))))
-         (pred (plist-get spec :post-filter)))
-    (should-not (funcall pred (list :title nil :content nil)))))
 
 (provide 'synaxis-filter-tests)
 ;;; synaxis-filter-tests.el ends here
