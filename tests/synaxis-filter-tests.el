@@ -553,5 +553,45 @@
     (should (string-match-p "e\\.date >= \\?" (plist-get c :where)))
     (should (= 2 (length (plist-get c :params))))))
 
+;;; synaxis-filter-explain
+
+(defun synaxis-filter-test--explain-body (filter)
+  "Run `synaxis-filter-explain' on FILTER and return the buffer contents."
+  (synaxis-filter-explain filter)
+  (with-current-buffer "*Synaxis Filter Explain*"
+    (buffer-substring-no-properties (point-min) (point-max))))
+
+(ert-deftest synaxis-filter-test-explain-renders-where-and-params ()
+  "Explain output shows the WHERE fragment and each parameter on a line."
+  (let ((body (synaxis-filter-test--explain-body "tag:emacs")))
+    (should (string-match-p "Filter: tag:emacs" body))
+    (should (string-match-p "WHERE" body))
+    (should (string-match-p "EXISTS" body))
+    (should (string-match-p "Parameters" body))
+    (should (string-match-p "\"emacs\"" body))))
+
+(ert-deftest synaxis-filter-test-explain-renders-tokens ()
+  "Explain output shows parsed token cells."
+  (let ((body (synaxis-filter-test--explain-body "tag:emacs")))
+    (should (string-match-p "Tokens" body))
+    (should (string-match-p "(tag . \"emacs\")" body))))
+
+(ert-deftest synaxis-filter-test-explain-shows-explicit-limit ()
+  "An explicit `limit:50' appears in the Limit line."
+  (let ((body (synaxis-filter-test--explain-body "tag:emacs limit:50")))
+    (should (string-match-p "Limit: 50" body))))
+
+(ert-deftest synaxis-filter-test-explain-handles-empty-filter ()
+  "An empty filter produces a `1=1' WHERE and no parameters."
+  (let ((body (synaxis-filter-test--explain-body "")))
+    (should (string-match-p "1=1" body))))
+
+(ert-deftest synaxis-filter-test-explain-handles-date-cmp ()
+  "Explain on a date-cmp filter shows the e.date clause and an ISO param."
+  (let ((body (synaxis-filter-test--explain-body "date:>=now-7d")))
+    (should (string-match-p "e\\.date >= \\?" body))
+    (should (string-match-p
+             "\"[0-9]\\{4\\}-[0-9]\\{2\\}-[0-9]\\{2\\}T" body))))
+
 (provide 'synaxis-filter-tests)
 ;;; synaxis-filter-tests.el ends here
