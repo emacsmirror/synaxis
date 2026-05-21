@@ -20,13 +20,15 @@
 ;;
 ;; Supported tokens:
 ;;
-;;   tag:K        -tag:K        require / forbid tag K
-;;   feed:V       -feed:V       feed title contains / does not contain V
-;;   title:V      -title:V      entry title contains / does not contain V
-;;   content:V    -content:V    entry content contains / does not contain V
-;;   date:SPEC                  see `synaxis-filter-parse-date-spec'
-;;   limit:N                    cap the result count
-;;   WORD                       free text in (title OR content); AND-ed
+;;   tag:K        -tag:K          require / forbid tag K
+;;   feed:V       -feed:V         feed title contains / does not contain V
+;;   title:V      -title:V        entry title contains / does not contain V
+;;   content:V    -content:V      entry content contains / does not contain V
+;;   date:SPEC                    see `synaxis-filter-parse-date-spec'
+;;   date:>=VALUE date:<VALUE     single SQL comparison on e.date
+;;   date:>VALUE  date:<=VALUE      "
+;;   limit:N                      cap the result count
+;;   WORD                         free text in (title OR content); AND-ed
 ;;
 ;; All non-empty whitespace-separated tokens are AND-ed.  Unknown
 ;; prefixes are silently dropped.  `-date:' and `-limit:' are
@@ -35,6 +37,15 @@
 ;;
 ;; Multi-word values go in double quotes: `title:"drug something"'
 ;; matches via SQL LIKE `%drug something%' (case-insensitive).
+;;
+;; Date values understand the keywords `today', `yesterday',
+;; `thisweek', `thismonth', `thisyear', ISO forms `YYYY',
+;; `YYYY-MM', `YYYY-MM-DD', relative offsets `7d', `1y',
+;; `30months', and the arithmetic form `now', `now-Nunit',
+;; `now+Nunit'.  Comparison operators (`>=', `<=', `>', `<')
+;; produce one SQL clause each; `date:>2024-03' means "strictly
+;; after March 2024".  Use `M-x synaxis-filter-explain' to view
+;; the compiled WHERE and parameters for any filter string.
 
 ;;; Code:
 
@@ -353,7 +364,9 @@ Returns (:where S :params P :limit L)."
     "content:" "-content:" "date:" "limit:"
     "date:today" "date:yesterday"
     "date:thisweek" "date:thismonth" "date:thisyear"
-    "date:7d" "date:30d" "date:1y")
+    "date:7d" "date:30d" "date:1y"
+    "date:now" "date:now-7d" "date:now-30d" "date:now-1y"
+    "date:>=now-7d" "date:>=now-30d" "date:<now")
   "Static completion strings independent of DB state.")
 
 (defun synaxis-filter--db-tags ()
