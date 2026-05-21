@@ -241,6 +241,7 @@ Optional rule keys: :url-pattern, :content-selector, :content-cleanup,
     (synaxis-db-add-scrape-rule url rule-args)
     (message "synaxis: scrape feed registered %s" url)))
 
+;;;###autoload
 (defalias 'synaxis-create-feed-test 'synaxis-scrape-test
   "Preview a scrape rule without registering the feed.
 Sibling to `synaxis-create-feed' for discoverability.")
