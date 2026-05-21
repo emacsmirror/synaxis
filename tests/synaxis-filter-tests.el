@@ -445,5 +445,59 @@
   "`now7d' (no sign) is not a valid spec."
   (should (null (synaxis-filter-parse-date-spec "now7d"))))
 
+;;; date comparison-operator token parsing
+
+(ert-deftest synaxis-filter-test-parse-date-cmp-ge-now-7d ()
+  "`date:>=now-7d' yields one date-cmp token with op `>=' and time = now-7d."
+  (let* ((toks (synaxis-filter-parse "date:>=now-7d")))
+    (should (= 1 (length toks)))
+    (should (eq 'date-cmp (car (car toks))))
+    (should (equal ">=" (plist-get (cdr (car toks)) :op)))
+    (should (numberp (plist-get (cdr (car toks)) :time)))))
+
+(ert-deftest synaxis-filter-test-parse-date-cmp-lt-iso ()
+  "`date:<2024-01-01' resolves :time to start of Jan 1 2024."
+  (let* ((toks (synaxis-filter-parse "date:<2024-01-01"))
+         (cmp (cdr (car toks)))
+         (expected (float-time (encode-time 0 0 0 1 1 2024))))
+    (should (equal "<" (plist-get cmp :op)))
+    (should (= expected (plist-get cmp :time)))))
+
+(ert-deftest synaxis-filter-test-parse-date-cmp-gt-span-uses-to ()
+  "`date:>2024-03' resolves :time to start of Apr 2024 (the span's :to)."
+  (let* ((toks (synaxis-filter-parse "date:>2024-03"))
+         (cmp (cdr (car toks)))
+         (expected (float-time (encode-time 0 0 0 1 4 2024))))
+    (should (equal ">" (plist-get cmp :op)))
+    (should (= expected (plist-get cmp :time)))))
+
+(ert-deftest synaxis-filter-test-parse-date-cmp-le-span-uses-to ()
+  "`date:<=2024-03' resolves :time to start of Apr 2024."
+  (let* ((toks (synaxis-filter-parse "date:<=2024-03"))
+         (cmp (cdr (car toks)))
+         (expected (float-time (encode-time 0 0 0 1 4 2024))))
+    (should (equal "<=" (plist-get cmp :op)))
+    (should (= expected (plist-get cmp :time)))))
+
+(ert-deftest synaxis-filter-test-parse-date-cmp-ge-span-uses-from ()
+  "`date:>=2024-03' resolves :time to start of Mar 2024 (the span's :from)."
+  (let* ((toks (synaxis-filter-parse "date:>=2024-03"))
+         (cmp (cdr (car toks)))
+         (expected (float-time (encode-time 0 0 0 1 3 2024))))
+    (should (= expected (plist-get cmp :time)))))
+
+(ert-deftest synaxis-filter-test-parse-date-without-operator-falls-back-to-range ()
+  "`date:2024-03-15' still yields a `date' token (not date-cmp)."
+  (let ((toks (synaxis-filter-parse "date:2024-03-15")))
+    (should (eq 'date (car (car toks))))))
+
+(ert-deftest synaxis-filter-test-parse-date-cmp-bogus-value-dropped ()
+  "`date:>=floopy' has an unparseable value; token is dropped."
+  (should (null (synaxis-filter-parse "date:>=floopy"))))
+
+(ert-deftest synaxis-filter-test-parse-negated-date-cmp-dropped ()
+  "`-date:>=now-7d' is meaningless; token is dropped (consistent with `-date:')."
+  (should (null (synaxis-filter-parse "-date:>=now-7d"))))
+
 (provide 'synaxis-filter-tests)
 ;;; synaxis-filter-tests.el ends here
