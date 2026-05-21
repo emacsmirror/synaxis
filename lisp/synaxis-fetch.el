@@ -44,7 +44,7 @@ Bound around the `url-queue-retrieve' call as
 (defcustom synaxis-http-request-headers
   '(("Accept-Language" . "en-US,en;q=0.9")
     ("Accept" . "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
-    ("User-Agent" . "Mozilla/5.0 (X11; Linux x86_64; rv:128.0) Gecko/20100101 Firefox/128.0")
+    ("User-Agent" . "Mozilla/5.0 (X11; Linux x86_64; rv:140.0) Gecko/20100101 Firefox/140.0")
     ("Cookie" . "ucbcb=1; gdpr=1; cookieconsent_status=allow"))
   "HTTP headers sent by feed fetch and scrape requests.
 Bound as `url-request-extra-headers' around each call.  Defaults
