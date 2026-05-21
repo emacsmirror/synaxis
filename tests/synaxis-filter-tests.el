@@ -499,5 +499,59 @@
   "`-date:>=now-7d' is meaningless; token is dropped (consistent with `-date:')."
   (should (null (synaxis-filter-parse "-date:>=now-7d"))))
 
+;;; date-cmp compilation
+
+(ert-deftest synaxis-filter-test-compile-date-cmp-ge-emits-single-clause ()
+  "`date:>=now-7d' compiles to exactly one `e.date >= ?' clause."
+  (let* ((toks (synaxis-filter-parse "date:>=now-7d"))
+         (c (synaxis-filter-compile toks)))
+    (should (string-match-p "\\`e\\.date >= \\?\\'" (plist-get c :where)))
+    (should (= 1 (length (plist-get c :params))))))
+
+(ert-deftest synaxis-filter-test-compile-date-cmp-gt-maps-to-ge ()
+  "`date:>2024-03' compiles to `e.date >= ?' with start of Apr 2024 as param."
+  (let* ((toks (synaxis-filter-parse "date:>2024-03"))
+         (c (synaxis-filter-compile toks))
+         (expected (format-time-string "%Y-%m-%dT%H:%M:%SZ"
+                                       (encode-time 0 0 0 1 4 2024) t)))
+    (should (string-match-p "e\\.date >= \\?" (plist-get c :where)))
+    (should (equal (list expected) (plist-get c :params)))))
+
+(ert-deftest synaxis-filter-test-compile-date-cmp-lt-emits-strict-lower ()
+  "`date:<2024-01-01' compiles to `e.date < ?' with start of Jan 1 as param."
+  (let* ((toks (synaxis-filter-parse "date:<2024-01-01"))
+         (c (synaxis-filter-compile toks))
+         (expected (format-time-string "%Y-%m-%dT%H:%M:%SZ"
+                                       (encode-time 0 0 0 1 1 2024) t)))
+    (should (string-match-p "e\\.date < \\?" (plist-get c :where)))
+    (should (equal (list expected) (plist-get c :params)))))
+
+(ert-deftest synaxis-filter-test-compile-date-cmp-le-emits-strict-upper ()
+  "`date:<=2024-03' compiles to `e.date < ?' with start of Apr 2024."
+  (let* ((toks (synaxis-filter-parse "date:<=2024-03"))
+         (c (synaxis-filter-compile toks))
+         (expected (format-time-string "%Y-%m-%dT%H:%M:%SZ"
+                                       (encode-time 0 0 0 1 4 2024) t)))
+    (should (string-match-p "e\\.date < \\?" (plist-get c :where)))
+    (should (equal (list expected) (plist-get c :params)))))
+
+(ert-deftest synaxis-filter-test-compile-date-cmp-conjoins-two ()
+  "Two date-cmp tokens AND into two clauses."
+  (let* ((toks (synaxis-filter-parse "date:>=now-30d date:<now-7d"))
+         (c (synaxis-filter-compile toks))
+         (w (plist-get c :where)))
+    (should (string-match-p "e\\.date >= \\?" w))
+    (should (string-match-p "e\\.date < \\?" w))
+    (should (string-match-p " AND " w))
+    (should (= 2 (length (plist-get c :params))))))
+
+(ert-deftest synaxis-filter-test-compile-date-cmp-mixes-with-tag ()
+  "date-cmp composes with tag tokens."
+  (let* ((toks (synaxis-filter-parse "tag:emacs date:>=now-7d"))
+         (c (synaxis-filter-compile toks)))
+    (should (string-match-p "EXISTS" (plist-get c :where)))
+    (should (string-match-p "e\\.date >= \\?" (plist-get c :where)))
+    (should (= 2 (length (plist-get c :params))))))
+
 (provide 'synaxis-filter-tests)
 ;;; synaxis-filter-tests.el ends here
