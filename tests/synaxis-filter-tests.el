@@ -409,5 +409,41 @@
        (synaxis-tag-rules-apply-entry id))
      (should (member "medicine" (synaxis-db-get-tags id))))))
 
+;;; now-form date parsing
+
+(ert-deftest synaxis-filter-test-date-spec-now-bare ()
+  "`now' yields a point spec equal to current epoch (within 1s tolerance)."
+  (let* ((before (float-time))
+         (spec (synaxis-filter-parse-date-spec "now"))
+         (after (float-time)))
+    (should spec)
+    (should (= (plist-get spec :from) (plist-get spec :to)))
+    (should (<= before (plist-get spec :from) after))))
+
+(ert-deftest synaxis-filter-test-date-spec-now-minus-7d ()
+  "`now-7d' yields a point spec offset by exactly 7 days."
+  (let* ((before (float-time))
+         (spec (synaxis-filter-parse-date-spec "now-7d"))
+         (after (float-time))
+         (t-val (plist-get spec :from)))
+    (should spec)
+    (should (= t-val (plist-get spec :to)))
+    (should (<= (- before (* 7 86400)) t-val (- after (* 7 86400))))))
+
+(ert-deftest synaxis-filter-test-date-spec-now-plus-1h ()
+  "`now+1h' resolves to a positive offset."
+  (let* ((before (float-time))
+         (spec (synaxis-filter-parse-date-spec "now+1h"))
+         (t-val (plist-get spec :from)))
+    (should (>= t-val (+ before 3599)))))
+
+(ert-deftest synaxis-filter-test-date-spec-now-bogus-unit-rejected ()
+  "`now-7x' is not a valid spec."
+  (should (null (synaxis-filter-parse-date-spec "now-7x"))))
+
+(ert-deftest synaxis-filter-test-date-spec-now-no-sign-no-offset-rejected ()
+  "`now7d' (no sign) is not a valid spec."
+  (should (null (synaxis-filter-parse-date-spec "now7d"))))
+
 (provide 'synaxis-filter-tests)
 ;;; synaxis-filter-tests.el ends here
