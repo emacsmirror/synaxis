@@ -332,6 +332,15 @@ Returns (:where S :params P :limit L)."
                  (to   (plist-get (cdr tok) :to)))
              (when from (emit "e.date >= ?" (synaxis-filter--iso from)))
              (when to   (emit "e.date < ?"  (synaxis-filter--iso to)))))
+          ('date-cmp
+           (let* ((cmp (cdr tok))
+                  (op (plist-get cmp :op))
+                  (sql-op (pcase op
+                            ((or ">=" ">") ">=")
+                            ((or "<=" "<") "<")))
+                  (time (plist-get cmp :time)))
+             (emit (format "e.date %s ?" sql-op)
+                   (synaxis-filter--iso time))))
           ('limit (setq limit (cdr tok))))))
     (list :where  (if parts (string-join (nreverse parts) " AND ") "1=1")
           :params (nreverse params)
