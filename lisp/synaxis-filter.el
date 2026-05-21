@@ -144,9 +144,27 @@ Recognised units: s, m, h, d, w, months, y.  nil otherwise."
                   (now (float-time)))
          (list :from (- now secs) :to now))))
 
+(defun synaxis-filter--now-date (s)
+  "Parse S as `now', `now-Nunit', or `now+Nunit'; nil otherwise.
+Returns a `(:from T :to T)' plist where T is the resolved epoch."
+  (and (string-match
+        "\\`now\\(?:\\([-+]\\)\\([0-9]+\\)\\(months\\|s\\|m\\|h\\|d\\|w\\|y\\)\\)?\\'"
+        s)
+       (let ((now (float-time))
+             (sign (match-string 1 s)))
+         (if (null sign)
+             (list :from now :to now)
+           (and-let* ((secs (synaxis-filter--duration-seconds
+                             (string-to-number (match-string 2 s))
+                             (match-string 3 s)))
+                      (delta (if (equal sign "-") (- secs) secs))
+                      (resolved (+ now delta)))
+             (list :from resolved :to resolved))))))
+
 (defun synaxis-filter--simple-date-spec (s)
   "Dispatch S to one of the simple-date sub-parsers."
   (or (synaxis-filter--keyword-date s)
+      (synaxis-filter--now-date s)
       (synaxis-filter--absolute-date s)
       (synaxis-filter--relative-date s)))
 
