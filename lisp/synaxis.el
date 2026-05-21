@@ -147,13 +147,13 @@ Example:
 
 (defun synaxis-tag-rules-apply-entry (entry-id)
   "Apply each rule in `synaxis-tag-rules' to ENTRY-ID."
-  (cl-loop for rule in synaxis-tag-rules
-           for add    = (plist-get rule :add)
-           for remove = (plist-get rule :remove)
-           when (and (or add remove)
-                     (synaxis-tag-rules--rule-matches-entry-p rule entry-id))
-           do (cl-loop for tag in add    do (synaxis-db-add-tag    entry-id tag))
-           (cl-loop for tag in remove do (synaxis-db-remove-tag entry-id tag))))
+  (dolist (rule synaxis-tag-rules)
+    (let ((add    (plist-get rule :add))
+          (remove (plist-get rule :remove)))
+      (when (and (or add remove)
+                 (synaxis-tag-rules--rule-matches-entry-p rule entry-id))
+        (dolist (tag add)    (synaxis-db-add-tag    entry-id tag))
+        (dolist (tag remove) (synaxis-db-remove-tag entry-id tag))))))
 
 (defun synaxis-tag-rules-apply-all ()
   "Apply every rule in `synaxis-tag-rules' across all entries.
