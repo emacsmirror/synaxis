@@ -152,7 +152,9 @@ content do not collide."
                        (or (plist-get entry :date) ""))))))
 
 (defun synaxis-parse--ensure-source-ids (entries &optional feed-url)
-  "Return ENTRIES with every plist's `:source-id' set."
+  "Return ENTRIES with every plist's `:source-id' set.
+FEED-URL, when given, is mixed into the synthetic ID when an entry
+lacks both `:source-id' and `:link'."
   (mapcar (lambda (e)
             (plist-put e :source-id (synaxis-parse--source-id e feed-url)))
           entries))
@@ -180,8 +182,8 @@ content do not collide."
           ("feed" 'atom)
           ("rss"  'rss)
           ("rdf"  'rss1)
-          (_ (user-error "synaxis-parse: unknown root element %S" tag)))))
-     (t (user-error "synaxis-parse: cannot detect feed format")))))
+          (_ (user-error "Unknown synaxis feed root element %S" tag)))))
+     (t (user-error "Cannot detect synaxis feed format")))))
 
 ;;; Atom adapter
 

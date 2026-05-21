@@ -230,7 +230,7 @@ Required: :url-selector.  Optional feed-level keys: :title, :tags.
 Optional rule keys: :url-pattern, :content-selector, :content-cleanup,
 :title-cleanup, :date-selector, :date-format, :limit."
   (unless (plist-get rules :url-selector)
-    (user-error "synaxis-create-feed: missing :url-selector"))
+    (user-error "Missing :url-selector for synaxis-create-feed"))
   (pcase-let* ((`(,feed-args . ,rule-args) (synaxis-create-feed--split rules))
                (title (plist-get feed-args :title))
                (tags  (plist-get feed-args :tags)))

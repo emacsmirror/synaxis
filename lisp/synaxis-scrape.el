@@ -479,10 +479,10 @@ Routed to from `synaxis-fetch-feed' when the feed's type is `scrape'."
   "Buffer-local list of preview entry plists.
 RET in `synaxis-scrape-test-mode' looks up the entry at point here
 and renders it via `synaxis-show-entry-plist'.  Inspect with
-`M-x describe-variable RET synaxis-scrape-test--entries'.")
+`describe-variable' on `synaxis-scrape-test--entries' to inspect.")
 
 (defun synaxis-scrape-test--prep-entry (entry feed-title)
-  "Augment ENTRY plist with the fields needed by the search list view."
+  "Augment ENTRY plist with FEED-TITLE and search-list view fields."
   (list :id          (plist-get entry :source-id)
         :source-id   (plist-get entry :source-id)
         :feed-title  feed-title

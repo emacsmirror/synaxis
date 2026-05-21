@@ -44,7 +44,7 @@
 ;;; Date parsing
 
 (defun synaxis-filter--day-bounds (year month day)
-  "Return (FROM . TO) float-time for the day starting YEAR-MONTH-DAY."
+  "Return (FROM . TO) `float-time' bounds for the day at YEAR, MONTH, DAY."
   (let* ((from (float-time (encode-time 0 0 0 day month year)))
          (to   (+ from 86400)))
     (cons from to)))
@@ -152,7 +152,7 @@ Recognised units: s, m, h, d, w, months, y.  nil otherwise."
 
 (defun synaxis-filter-parse-date-spec (s)
   "Parse date spec S into a plist `(:from F :to T)' or nil.
-F and T are float-time bounds; either may be nil (open end).
+F and T are `float-time' bounds; either may be nil (open end).
 Supports ranges of the form LO..HI, LO.., and ..HI."
   (cond
    ((not (stringp s)) nil)

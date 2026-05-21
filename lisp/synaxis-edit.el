@@ -71,7 +71,7 @@ underlying stored value is untouched."
             (propertize "(unset)" 'face 'shadow))))
 
 (defun synaxis-edit--rule-line (label key)
-  "Pull KEY from the current scrape rule and format as a field line."
+  "Format scrape-rule KEY as a field line under LABEL."
   (synaxis-edit--field-line
    label
    (plist-get (synaxis-db-get-scrape-rule synaxis-edit--current-url) key)))

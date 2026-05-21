@@ -81,47 +81,31 @@ buffer.")
 
 ;;; Conditional GET workaround
 
-;; Background -- why this advice exists, in case a reviewer asks:
+;; `url-http' (Emacs core) handles a 304 Not Modified by
+;; unconditionally calling `url-cache-extract', with no existence
+;; check.  Synaxis keeps cache headers (ETag, Last-Modified) in
+;; SQLite and never populates `url-cache-directory', so on a 304
+;; `url-cache-extract' errors trying to read a missing file -- the
+;; fetch callback then sees a failure even though the conditional
+;; GET succeeded.
 ;;
-;; `url-http' (Emacs core, lisp/url/url-http.el line ~728) handles a
-;; 304 Not Modified response by unconditionally calling
-;; (url-cache-extract (url-cache-create-filename (url-view-url t))).
-;; That helper does:
-;;   (erase-buffer)
-;;   (set-buffer-multibyte nil)
-;;   (insert-file-contents-literally fnam)
-;; with no existence check.
+;; The :around advice below treats a missing cache file as a no-op;
+;; existing files run the original path unchanged.  Installed only
+;; while a fetch is in flight (see `synaxis-fetch-feed' and
+;; `synaxis-fetch--callback') so non-synaxis url.el callers are
+;; unaffected.
 ;;
-;; Synaxis keeps cache headers (ETag, Last-Modified) in its own
-;; SQLite DB and never writes anything to `url-cache-directory'.  So
-;; on a 304, `url-cache-extract' tries to read a file that does not
-;; exist and raises an error, which surfaces as a fetch failure in
-;; our callback even though the conditional GET succeeded.
-;;
-;; The fix is :around advice that treats a missing cache file as a
-;; no-op instead of an error.  When the file exists (i.e. some other
-;; package did populate url-cache for this URL) the original
-;; behaviour runs unchanged.  When the file is missing we leave the
-;; response buffer alone so its HTTP headers remain readable, and
-;; `synaxis-fetch--parse-response' detects the 304 from the status
-;; line and dispatches our "no new content" branch.
-;;
-;; Scope: the advice is installed only while we have at least one
-;; fetch in flight (see `synaxis-fetch-feed' and
-;; `synaxis-fetch--callback') so it does not affect non-synaxis
-;; url.el callers during idle periods.
-;;
-;; cl-letf cannot be used here: `url-queue-retrieve' enqueues the
-;; request and returns synchronously, but `url-cache-extract' is
-;; called later in url-http's async response handler, by which time
-;; cl-letf's dynamic binding has unwound.
+;; `cl-letf' cannot replace the advice: `url-cache-extract' runs
+;; later in url-http's async handler, after the let-binding has
+;; unwound.
 
 (defvar synaxis-fetch--cache-advice-active nil
   "Non-nil while our `url-cache-extract' :around advice is installed.")
 
 (defun synaxis-fetch--url-cache-extract-safe (orig fnam)
   "Around-advice on `url-cache-extract' tolerating a missing cache file.
-See the commentary above this function for the full reasoning."
+ORIG is the wrapped function, FNAM the cache file path.  See the
+commentary above this function for the full reasoning."
   (if (file-exists-p fnam)
       (funcall orig fnam)
     nil))
