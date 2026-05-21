@@ -1,2 +1,175 @@
+#+TITLE: synaxis
+#+OPTIONS: toc:nil num:nil
 
-* Under development
+A personal, queryable content archive for Emacs. /Synaxis/ (Greek
+σύναξις, "gathering") ingests RSS, Atom, and JSON feeds; scrapes
+arbitrary HTML pages with a CSS-subset selector language; stores
+everything in local SQLite; and lets you filter the result with a
+small query DSL that compiles to SQL =WHERE=.
+
+It is three things stacked:
+
+1. *Ingestion* -- RSS / Atom / JSON for sites that publish feeds,
+   /plus/ an HTML scraper for sites that don't.
+2. *Archive* -- a single local SQLite file is the source of truth.
+   Views are stateless renderers; nothing is cached in Elisp.
+3. *Query* -- a filter mini-language (=+tag -tag feed: title:
+   date:=) compiles to SQL, plus =synaxis-tag-rules= for autotagging
+   on new entries.
+
+Requires Emacs 29.1+ (for native SQLite) and [[https://codeberg.org/thanosapollo/keymap-popup][keymap-popup]].
+
+* Install
+
+With use-package and Emacs 30+ =:vc= keyword:
+
+#+begin_src elisp
+(use-package synaxis
+  :vc (:url "https://codeberg.org/thanosapollo/synaxis")
+  :bind ("C-c r" . synaxis))
+#+end_src
+
+On Emacs 29 use =package-vc-install= directly:
+
+#+begin_src elisp
+(package-vc-install "https://codeberg.org/thanosapollo/emacs-synaxis")
+#+end_src
+
+=keymap-popup= is pulled in automatically from GNU ELPA.
+
+* Quick start
+
+#+begin_src elisp
+(synaxis-add-feed "https://planet.emacslife.com/atom.xml")
+#+end_src
+
+=M-x synaxis= opens the entry list.  =h= in any synaxis buffer
+shows the keymap; the popup keymap (=keymap-popup=) gives you a
+discoverable menu of every command on its prefix key.
+
+* Adding feeds
+
+** RSS / Atom / JSON
+
+=synaxis-add-feed= takes a URL and optional title.  The feed type is
+auto-detected at first fetch.
+
+** Scrape feeds (sites without a feed)
+
+=synaxis-create-feed= registers a URL plus a scrape rule that turns
+its HTML into entries.  Recognised rule keys:
+
+| Key                  | Purpose                                                       |
+|----------------------+---------------------------------------------------------------|
+| =:url-selector=      | CSS selector for each entry's containing element (required).  |
+| =:url-pattern=       | Regex filter applied to each entry's link.                    |
+| =:limit=             | Cap the entry count per fetch.                                |
+| =:title-cleanup=     | Substring removed from extracted titles.                      |
+| =:date-selector=     | CSS selector for the date node (=datetime= attr or text).     |
+| =:content-selector=  | CSS selector on the article page; triggers per-article fetch. |
+| =:content-cleanup=   | Selector for noise nodes to strip from extracted content.     |
+
+Selector syntax is a CSS subset: tag, =.class=, =#id=, descendant
+(space), child (=>=), and comma alternation.  Multiple selectors in
+=:content-cleanup= go comma-separated.
+
+Before saving a rule, preview it with =synaxis-create-feed-test=
+(alias for =synaxis-scrape-test=).  It fetches the page, applies
+the rules, and pops =*synaxis-scrape-test*= with up to 5 extracted
+entries -- no DB writes.
+
+Worked example -- the PubMed trending page:
+
+#+begin_src elisp
+(synaxis-create-feed-test
+ "https://pubmed.ncbi.nlm.nih.gov/trending/?sort=date"
+ :url-selector ".full-docsum"
+ :content-selector ".abstract-content.selected")
+#+end_src
+
+Once the preview looks right, swap =-test= for the real command:
+
+#+begin_src elisp
+(synaxis-create-feed
+ "https://pubmed.ncbi.nlm.nih.gov/trending/?sort=date"
+ :title "PubMed Trending"
+ :tags '("med")
+ :url-selector ".full-docsum"
+ :content-selector ".abstract-content.selected")
+#+end_src
+
+A second example showing every key in use; Medscape with a date
+selector and a cleanup list to strip share widgets out of article
+bodies:
+
+#+begin_src elisp
+(synaxis-create-feed-test ;; just remove -test to add as a feed
+ "https://www.medscape.com/index/list_13470_0"
+ :title "Medscape"
+ :tags '("med")
+ :url-selector "#archives li"
+ :date-selector ".byline"
+ :content-selector ".article__body-maincontent"
+ :content-cleanup ".share-holder, .socials-container")
+#+end_src
+
+* Filter language
+
+The filter prompt (=s= in the entry list) accepts whitespace-separated
+tokens that compile to a single SQL =WHERE= clause.
+
+| Token            | Matches                                                  |
+|------------------+----------------------------------------------------------|
+| =word=           | Entry title or content contains =word= (case-insens.).   |
+| =+tag=, =tag:t=  | Entry has tag =t=.                                       |
+| =-tag:t=         | Entry does *not* have tag =t=.                           |
+| =feed:str=       | Feed title contains =str=.                               |
+| =title:str=      | Entry title contains =str=.                              |
+| =content:str=    | Entry content contains =str=.                            |
+| =date:spec=      | Entry date matches =spec= (see below).                   |
+| =limit:N=        | Cap result count to =N=.                                 |
+
+Negate any field with a leading =-= (=-feed:=, =-title:=, etc.).
+Quote values containing whitespace: =title:"drug interaction"=.
+
+Date specs:
+
+| Spec                    | Meaning                              |
+|-------------------------+--------------------------------------|
+| =today=, =yesterday=    | Calendar day window.                 |
+| =thisweek=, =thismonth= | Open-ended back to start of period.  |
+| =Nd=, =Nw=, =Nm=, =Ny=  | Last N days / weeks / months / years. |
+| =YYYY-MM-DD=            | A single calendar day.               |
+| =LO..HI=, =LO..=, =..HI= | Range; either end open.             |
+
+Examples:
+
+#+begin_example
++emacs -opinion date:7d
+feed:medscape title:"clinical trial" date:30d
++unread -feed:hackaday limit:20
+#+end_example
+
+* Tags and autotags
+
+Tags are first-class rows in the DB; =unread= is just a tag (no
+read/unread column).  Toggle tags interactively from the entry
+list; bulk operations honour the current marks.
+
+For automatic classification on new entries, add a rule to
+=synaxis-tag-rules=:
+
+#+begin_src elisp
+(setq synaxis-tag-rules
+      '((:filter "feed:medscape title:cardiology" :add ("heart"))
+        (:filter "feed:pubmed" :add ("research") :remove ("unread"))))
+#+end_src
+
+Each rule's =:filter= is the same DSL above.  Rules run inside the
+=synaxis-new-entry-hook= so they apply during sync; =M-x
+synaxis-tag-rules-apply-all= retroactively classifies the existing
+archive.
+
+Feed-level =:tags= passed to =synaxis-add-feed= or
+=synaxis-create-feed= are applied to every entry from that feed
+(stored as =:autotags= in the feed's =meta= column).
