@@ -187,6 +187,26 @@ Supports ranges of the form LO..HI, LO.., and ..HI."
       (and (or from to) (list :from from :to to))))
    (t (synaxis-filter--simple-date-spec s))))
 
+(defun synaxis-filter--date-cmp-boundary (op spec)
+  "Pick the boundary epoch from SPEC for OP.
+SPEC is a `(:from F :to T)' plist.  `>=' and `<' use :from; `>' and
+`<=' use :to.  This makes operator semantics correct for both point
+values (where :from = :to) and span values like `2024-03-15' or
+`2024-03'."
+  (pcase op
+    ((or ">=" "<") (plist-get spec :from))
+    ((or ">" "<=") (plist-get spec :to))))
+
+(defun synaxis-filter--date-cmp-token (val)
+  "Parse VAL as `OPSPEC' and return a `date-cmp' cell, or nil.
+Returns nil when VAL has no operator prefix or SPEC is unparseable."
+  (and (string-match "\\`\\(>=\\|<=\\|>\\|<\\)\\(.+\\)\\'" val)
+       (and-let* ((op (match-string 1 val))
+                  (spec (synaxis-filter--simple-date-spec
+                         (match-string 2 val)))
+                  (time (synaxis-filter--date-cmp-boundary op spec)))
+         (cons 'date-cmp (list :op op :time time)))))
+
 ;;; Token classification
 
 (defun synaxis-filter--token-for (key val negated)
@@ -198,8 +218,9 @@ Supports ranges of the form LO..HI, LO.., and ..HI."
      (cons (intern (format "%s%s" (if negated "not-" "") key)) val))
     ('tag   (cons (if negated 'not-tag 'tag) val))
     ('date  (and (not negated)
-                 (let ((spec (synaxis-filter-parse-date-spec val)))
-                   (and spec (cons 'date spec)))))
+                 (or (synaxis-filter--date-cmp-token val)
+                     (let ((spec (synaxis-filter-parse-date-spec val)))
+                       (and spec (cons 'date spec))))))
     ('limit (and (not negated)
                  (let ((n (string-to-number val)))
                    (and (> n 0) (cons 'limit n)))))))
