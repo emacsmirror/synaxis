@@ -195,6 +195,7 @@ so the format reflects the current window size."
   "p" ("Previous" previous-line :stay-open t)
   "RET" ("Open" synaxis-search-show-entry)
   "b" ("Browse URL" synaxis-search-browse-entry)
+  "c" ("Copy URL" synaxis-search-copy-link)
   :group "Tags"
   "r" ("Toggle read" synaxis-search-toggle-read :stay-open t)
   "R" ("Mark all read" synaxis-search-mark-all-read)
@@ -302,6 +303,15 @@ DB-backed in `synaxis-search-mode'; buffer-local store in
   (if-let* ((entry (synaxis-search--entry-at-point))
             (link  (plist-get entry :link)))
       (browse-url link)
+    (user-error "No link for this entry")))
+
+(defun synaxis-search-copy-link ()
+  "Copy the entry at point's article URL to the kill ring."
+  (interactive)
+  (if-let* ((entry (synaxis-search--entry-at-point))
+            (link  (plist-get entry :link)))
+      (progn (kill-new link)
+             (message "synaxis: copied %s" link))
     (user-error "No link for this entry")))
 
 (defun synaxis-search-mark-all-read ()
