@@ -123,6 +123,7 @@ and plist-preview render paths.")
   :group "Entry"
   "g" ("Reload"         synaxis-show-revert)
   "b" ("Browse URL"     synaxis-show-browse-entry)
+  "c" ("Copy URL"       synaxis-show-copy-link)
   "q" ("Quit"           quit-window))
 
 ;;; Mode
@@ -223,6 +224,14 @@ originating `*synaxis*' buffer and lands point on the new entry."
   (interactive)
   (if synaxis-show--current-link
       (browse-url synaxis-show--current-link)
+    (user-error "No link for this entry")))
+
+(defun synaxis-show-copy-link ()
+  "Copy the current entry's article URL to the kill ring."
+  (interactive)
+  (if synaxis-show--current-link
+      (progn (kill-new synaxis-show--current-link)
+             (message "synaxis: copied %s" synaxis-show--current-link))
     (user-error "No link for this entry")))
 
 (provide 'synaxis-show)
