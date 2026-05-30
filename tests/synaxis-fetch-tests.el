@@ -239,7 +239,10 @@
      (cl-letf (((symbol-function 'url-queue-retrieve)
                 (lambda (&rest _) (setq queue-fired t)))
                ((symbol-function 'synaxis-scrape-feed)
-                (lambda (_url) (setq scrape-fired t))))
+                (lambda (_url &optional done-callback)
+                  (setq scrape-fired t)
+                  (when done-callback
+                    (funcall done-callback)))))
        (synaxis-fetch-feed "https://example.com/rss"))
      (should queue-fired)
      (should-not scrape-fired))))
@@ -251,7 +254,10 @@
      (cl-letf (((symbol-function 'url-queue-retrieve)
                 (lambda (&rest _) (setq queue-fired t)))
                ((symbol-function 'synaxis-scrape-feed)
-                (lambda (_url) (setq scrape-fired t))))
+                (lambda (_url &optional done-callback)
+                  (setq scrape-fired t)
+                  (when done-callback
+                    (funcall done-callback)))))
        (synaxis-fetch-feed "https://example.com/sc"))
      (should scrape-fired)
      (should-not queue-fired))))
@@ -315,10 +321,19 @@
 
 ;;; Queue-drained hook
 
+(defun synaxis-fetch-test--drain-call-p (call)
+  "Non-nil when CALL schedules `synaxis-fetch-queue-drained-hook'."
+  (and (equal 0 (nth 0 call))
+       (null (nth 1 call))
+       (eq (nth 2 call) #'run-hooks)
+       (equal (nth 3 call) '(synaxis-fetch-queue-drained-hook))))
+
+(defun synaxis-fetch-test--drain-calls (scheduled)
+  "Return queue-drained hook scheduling calls from SCHEDULED."
+  (cl-remove-if-not #'synaxis-fetch-test--drain-call-p scheduled))
+
 (ert-deftest synaxis-fetch-test-callback-schedules-queue-drained-hook-on-drain ()
-  "When the in-flight table becomes empty inside the callback,
-the drain branch must schedule `run-hooks' on
-`synaxis-fetch-queue-drained-hook' via `run-at-time 0'."
+  "Schedule the drained hook when the callback empties the in-flight table."
   (synaxis-tests--with-tmp
    (let* ((url "https://example.com/atom")
           (buf (synaxis-tests--http-response
@@ -332,18 +347,10 @@ the drain branch must schedule `run-hooks' on
        (with-current-buffer buf
          (synaxis-fetch--callback nil url)))
      (should (zerop (hash-table-count synaxis-fetch--in-flight)))
-     (should (cl-find-if
-              (lambda (call)
-                (and (equal 0 (nth 0 call))
-                     (null  (nth 1 call))
-                     (eq    (nth 2 call) #'run-hooks)
-                     (equal (nth 3 call)
-                            '(synaxis-fetch-queue-drained-hook))))
-              scheduled)))))
+     (should (= 1 (length (synaxis-fetch-test--drain-calls scheduled)))))))
 
 (ert-deftest synaxis-fetch-test-callback-skips-hook-when-queue-not-drained ()
-  "When the in-flight table is still non-empty after the callback,
-no queue-drained hook should be scheduled."
+  "Do not schedule the drained hook while another URL is in flight."
   (synaxis-tests--with-tmp
    (let* ((url "https://example.com/atom")
           (other "https://example.com/other")
@@ -359,11 +366,116 @@ no queue-drained hook should be scheduled."
        (with-current-buffer buf
          (synaxis-fetch--callback nil url)))
      (should (= 1 (hash-table-count synaxis-fetch--in-flight)))
-     (should-not (cl-find-if
-                  (lambda (call)
-                    (equal (nth 3 call)
-                           '(synaxis-fetch-queue-drained-hook)))
-                  scheduled)))))
+     (should-not (synaxis-fetch-test--drain-calls scheduled)))))
+
+(ert-deftest synaxis-fetch-test-scrape-schedules-queue-drained-hook-on-drain ()
+  "Scrape feeds should drain like queued fetches."
+  (synaxis-tests--with-tmp
+   (let ((url "https://example.com/sc")
+         scheduled)
+     (synaxis-db-add-feed url '(:type "scrape"))
+     (clrhash synaxis-fetch--in-flight)
+     (cl-letf (((symbol-function 'synaxis-scrape-feed)
+                (lambda (_url &optional done-callback)
+                  (when done-callback
+                    (funcall done-callback))))
+               ((symbol-function 'run-at-time)
+                (lambda (secs repeat fn &rest args)
+                  (push (list secs repeat fn args) scheduled))))
+       (synaxis-fetch-feed url))
+     (should (zerop (hash-table-count synaxis-fetch--in-flight)))
+     (should (= 1 (length (synaxis-fetch-test--drain-calls scheduled)))))))
+
+(ert-deftest synaxis-fetch-test-scrape-completion-is-idempotent ()
+  "A scrape completion callback called twice should drain only once."
+  (synaxis-tests--with-tmp
+   (let ((url "https://example.com/sc")
+         scheduled)
+     (synaxis-db-add-feed url '(:type "scrape"))
+     (clrhash synaxis-fetch--in-flight)
+     (cl-letf (((symbol-function 'synaxis-scrape-feed)
+                (lambda (_url &optional done-callback)
+                  (when done-callback
+                    (funcall done-callback)
+                    (funcall done-callback))))
+               ((symbol-function 'run-at-time)
+                (lambda (secs repeat fn &rest args)
+                  (push (list secs repeat fn args) scheduled))))
+       (synaxis-fetch-feed url))
+     (should (zerop (hash-table-count synaxis-fetch--in-flight)))
+     (should (= 1 (length (synaxis-fetch-test--drain-calls scheduled)))))))
+
+(ert-deftest synaxis-fetch-test-scrape-setup-error-clears-in-flight ()
+  "A synchronous scrape setup error should not leave URL in flight."
+  (synaxis-tests--with-tmp
+   (let ((url "https://example.com/sc")
+         scheduled)
+     (synaxis-db-add-feed url '(:type "scrape"))
+     (clrhash synaxis-fetch--in-flight)
+     (cl-letf (((symbol-function 'synaxis-scrape-feed)
+                (lambda (&rest _) (error "Boom")))
+               ((symbol-function 'run-at-time)
+                (lambda (secs repeat fn &rest args)
+                  (push (list secs repeat fn args) scheduled))))
+       (synaxis-fetch-feed url))
+     (should (zerop (hash-table-count synaxis-fetch--in-flight)))
+     (should (= 1 (plist-get (synaxis-db-get-feed url) :failures)))
+     (should (= 1 (length (synaxis-fetch-test--drain-calls scheduled)))))))
+
+(ert-deftest synaxis-fetch-test-scrape-skips-hook-when-queue-not-drained ()
+  "Scrape completion should not run the drained hook while another URL lives."
+  (synaxis-tests--with-tmp
+   (let ((url "https://example.com/sc")
+         (other "https://example.com/other")
+         scheduled)
+     (synaxis-db-add-feed url '(:type "scrape"))
+     (clrhash synaxis-fetch--in-flight)
+     (puthash other t synaxis-fetch--in-flight)
+     (cl-letf (((symbol-function 'synaxis-scrape-feed)
+                (lambda (_url &optional done-callback)
+                  (when done-callback
+                    (funcall done-callback))))
+               ((symbol-function 'run-at-time)
+                (lambda (secs repeat fn &rest args)
+                  (push (list secs repeat fn args) scheduled))))
+       (synaxis-fetch-feed url))
+     (should (= 1 (hash-table-count synaxis-fetch--in-flight)))
+     (should (gethash other synaxis-fetch--in-flight))
+     (should-not (synaxis-fetch-test--drain-calls scheduled)))))
+
+(ert-deftest synaxis-fetch-test-mixed-rss-scrape-drain-clears-cache-advice ()
+  "When scrape drains after RSS, cache advice is removed once."
+  (synaxis-tests--with-tmp
+   (let* ((rss "https://example.com/rss")
+          (scrape "https://example.com/sc")
+          (buf (synaxis-tests--http-response "304 Not Modified" nil ""))
+          scrape-done
+          scheduled)
+     (unwind-protect
+         (progn
+           (synaxis-db-add-feed scrape '(:type "scrape"))
+           (clrhash synaxis-fetch--in-flight)
+           (synaxis-fetch--cache-advice-toggle t)
+           (puthash rss t synaxis-fetch--in-flight)
+           (cl-letf (((symbol-function 'synaxis-scrape-feed)
+                      (lambda (_url &optional done-callback)
+                        (setq scrape-done done-callback)))
+                     ((symbol-function 'run-at-time)
+                      (lambda (secs repeat fn &rest args)
+                        (push (list secs repeat fn args) scheduled))))
+             (synaxis-fetch-feed scrape)
+             (should (= 2 (hash-table-count synaxis-fetch--in-flight)))
+             (with-current-buffer buf
+               (synaxis-fetch--callback nil rss))
+             (should (= 1 (hash-table-count synaxis-fetch--in-flight)))
+             (should synaxis-fetch--cache-advice-active)
+             (funcall scrape-done)
+             (should (zerop (hash-table-count synaxis-fetch--in-flight)))
+             (should-not synaxis-fetch--cache-advice-active)
+             (should (= 1 (length (synaxis-fetch-test--drain-calls scheduled))))))
+       (synaxis-fetch--cache-advice-toggle nil)
+       (when (buffer-live-p buf)
+         (kill-buffer buf))))))
 
 (provide 'synaxis-fetch-tests)
 ;;; synaxis-fetch-tests.el ends here
