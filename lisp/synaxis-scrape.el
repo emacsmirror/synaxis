@@ -387,26 +387,28 @@ Calls DONE-CALLBACK with the entry list once all pending fetches return."
     (url-queue-retrieve
      (plist-get entry :link)
      (lambda (_status entry rules tracker done-callback)
-       (unwind-protect
-           (let ((result (ignore-errors
-                           (synaxis-scrape--apply-content
-                            (current-buffer) rules))))
-             (when (plist-get result :content)
-               (plist-put entry :content (plist-get result :content)))
-             (when (plist-get result :date)
-               (plist-put entry :date (plist-get result :date))))
-         (kill-buffer (current-buffer))
-         (synaxis-scrape--tracker-tick tracker entry done-callback)))
+       (let ((buf (current-buffer)))
+         (unwind-protect
+             (let ((result (ignore-errors
+                             (synaxis-scrape--apply-content buf rules))))
+               (when (plist-get result :content)
+                 (plist-put entry :content (plist-get result :content)))
+               (when (plist-get result :date)
+                 (plist-put entry :date (plist-get result :date))))
+           (when (buffer-live-p buf)
+             (kill-buffer buf))
+           (synaxis-scrape--tracker-tick tracker entry done-callback))))
      (list entry rules tracker done-callback)
      t t)))
 
 (defun synaxis-scrape--tracker-tick (tracker entry done-callback)
   "Mark ENTRY done in TRACKER; fire DONE-CALLBACK if all are in."
-  (let ((pending (plist-get tracker :pending)))
+  (let* ((pending (plist-get tracker :pending))
+         (new-pending (1- pending)))
     (plist-put tracker :done
                (cons entry (plist-get tracker :done)))
-    (plist-put tracker :pending (1- pending))
-    (when (zerop (1- pending))
+    (plist-put tracker :pending new-pending)
+    (when (zerop new-pending)
       (funcall done-callback (nreverse (plist-get tracker :done))))))
 
 (defun synaxis-scrape--expand-content (entries rules callback)
@@ -432,14 +434,45 @@ CALLBACK receives the augmented entry list.  When RULES lacks
 
 (defun synaxis-scrape--fetch-html (url)
   "Synchronously fetch URL and return its decoded HTML body.
+Used by `synaxis-scrape-test'.
+
 401s from the server are surfaced as the response body rather than
 triggering Emacs's interactive auth prompt."
+  (let ((url-request-noninteractive t)
+        (url-request-extra-headers synaxis-http-request-headers))
+    (let ((buf (url-retrieve-synchronously url t t)))
+      (unwind-protect (synaxis-scrape--decode-html buf)
+        (when (buffer-live-p buf) (kill-buffer buf))))))
+
+(defun synaxis-scrape--fetch-html-async (url callback)
+  "Asynchronously fetch URL and call CALLBACK with HTML or an error.
+CALLBACK is called with two arguments: HTML and ERR.  Exactly one
+of them is non-nil."
   (let ((url-request-extra-headers synaxis-http-request-headers))
-    (cl-letf (((symbol-function 'url-get-authentication)
-               (lambda (&rest _) nil)))
-      (let ((buf (url-retrieve-synchronously url t t)))
-        (unwind-protect (synaxis-scrape--decode-html buf)
-          (when (buffer-live-p buf) (kill-buffer buf)))))))
+    (url-queue-retrieve
+     url
+     (lambda (status callback)
+       (let ((buf (current-buffer))
+             (status-error (plist-get status :error)))
+         (unwind-protect
+             (if status-error
+                 (funcall callback nil status-error)
+               (let (html err)
+                 (condition-case e
+                     (setq html (synaxis-scrape--decode-html buf))
+                   (error (setq err e)))
+                 (funcall callback html err)))
+           (when (buffer-live-p buf) (kill-buffer buf)))))
+     (list callback)
+     t t)))
+
+(defun synaxis-scrape--record-failure (url)
+  "Increment URL's scrape failure counter and stamp `last_fetched'."
+  (let* ((feed (synaxis-db-get-feed url))
+         (failures (1+ (or (plist-get feed :failures) 0))))
+    (synaxis-db-set-feed-cache-headers
+     url (list :last-fetched (float-time)
+               :failures failures))))
 
 (defun synaxis-scrape--save-entries (url entries)
   "Upsert ENTRIES under feed URL; fire `synaxis-new-entry-hook' for inserts."
@@ -448,22 +481,54 @@ triggering Emacs's interactive auth prompt."
     (cl-loop for entry in entries
              do (synaxis-db-upsert-with-tags url autotags entry))))
 
-(defun synaxis-scrape-feed (url)
-  "Run the scrape pipeline for URL: fetch + extract + (optional) expand + save.
+(defun synaxis-scrape--process-html (url html rules callback)
+  "Extract entries from HTML at URL under RULES and pass them to CALLBACK."
+  (let ((entries (synaxis-scrape--extract html url rules)))
+    (synaxis-db-set-feed-title-if-empty
+     url (synaxis-scrape--page-title html rules))
+    (synaxis-scrape--expand-content entries rules callback)))
+
+(defun synaxis-scrape--store-success (url entries)
+  "Save ENTRIES for URL and mark the scrape feed successful."
+  (synaxis-scrape--save-entries url entries)
+  (synaxis-db-set-feed-cache-headers
+   url (list :last-fetched (float-time) :failures 0)))
+
+(defun synaxis-scrape-feed (url &optional done-callback)
+  "Run the scrape pipeline for URL asynchronously.
+Fetches the index page, extracts entry candidates, optionally fetches each
+article to expand content/date, then upserts into the DB.
+
+DONE-CALLBACK, when non-nil, is called once when the scrape cycle finishes.
+
 Routed to from `synaxis-fetch-feed' when the feed's type is `scrape'."
-  (let ((rules (synaxis-db-get-scrape-rule url)))
+  (let ((rules (synaxis-db-get-scrape-rule url))
+        (finished nil))
     (unless rules
       (user-error "No scrape rule for %s" url))
-    (let* ((html (synaxis-scrape--fetch-html url))
-           (entries (synaxis-scrape--extract html url rules)))
-      (synaxis-db-set-feed-title-if-empty
-       url (synaxis-scrape--page-title html rules))
-      (synaxis-scrape--expand-content
-       entries rules
-       (lambda (final)
-         (synaxis-scrape--save-entries url final)
-         (synaxis-db-set-feed-cache-headers
-          url (list :last-fetched (float-time) :failures 0)))))))
+    (cl-labels ((finish ()
+                  (unless finished
+                    (setq finished t)
+                    (when done-callback
+                      (funcall done-callback))))
+                (fail (err)
+                  (message "synaxis: scrape failed for %s: %S" url err)
+                  (ignore-errors (synaxis-scrape--record-failure url))
+                  (finish))
+                (store (entries)
+                  (condition-case err
+                      (progn
+                        (synaxis-scrape--store-success url entries)
+                        (finish))
+                    (error (fail err)))))
+      (synaxis-scrape--fetch-html-async
+       url
+       (lambda (html err)
+         (if err
+             (fail err)
+           (condition-case err
+               (synaxis-scrape--process-html url html rules #'store)
+             (error (fail err)))))))))
 
 ;;; Dry-run test command
 
@@ -516,7 +581,7 @@ the source instead of the DB."
     (synaxis-show-entry-plist entry)))
 
 (define-key synaxis-scrape-test-mode-map (kbd "RET")
-	    #'synaxis-scrape-test-show)
+  #'synaxis-scrape-test-show)
 
 (defun synaxis-scrape--render-test-buffer (url entries)
   "Pop the scrape-test buffer with ENTRIES extracted from URL."
@@ -563,23 +628,24 @@ Returns ENTRIES with `:content' and `:date' filled per RULES.
 Inhibits Emacs's auth prompt on 401 responses."
   (if (not (plist-get rules :content-selector))
       entries
-    (cl-letf (((symbol-function 'url-get-authentication)
-               (lambda (&rest _) nil)))
-      (mapcar
-       (lambda (e)
-         (condition-case nil
-             (let* ((url-request-extra-headers synaxis-http-request-headers)
-                    (buf (url-retrieve-synchronously
-                          (plist-get e :link) t t))
-                    (result (synaxis-scrape--apply-content buf rules)))
-               (when (buffer-live-p buf) (kill-buffer buf))
-               (when (plist-get result :content)
-                 (setq e (plist-put e :content (plist-get result :content))))
-               (when (plist-get result :date)
-                 (setq e (plist-put e :date (plist-get result :date))))
-               e)
-           (error e)))
-       entries))))
+    (mapcar
+     (lambda (e)
+       (condition-case nil
+           (let* ((url-request-noninteractive t)
+                  (url-request-extra-headers synaxis-http-request-headers)
+                  (buf (url-retrieve-synchronously
+                        (plist-get e :link) t t)))
+             (unwind-protect
+                 (let ((result (synaxis-scrape--apply-content buf rules)))
+                   (when (plist-get result :content)
+                     (setq e (plist-put e :content (plist-get result :content))))
+                   (when (plist-get result :date)
+                     (setq e (plist-put e :date (plist-get result :date))))
+                   e)
+               (when (buffer-live-p buf)
+                 (kill-buffer buf))))
+         (error e)))
+     entries)))
 
 (provide 'synaxis-scrape)
 ;;; synaxis-scrape.el ends here

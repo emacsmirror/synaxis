@@ -25,7 +25,7 @@
 (require 'synaxis-db)
 (require 'synaxis-parse)
 
-(declare-function synaxis-scrape-feed "synaxis-scrape" (url))
+(declare-function synaxis-scrape-feed "synaxis-scrape" (url &optional done-callback))
 
 ;;; Customisation
 
@@ -122,6 +122,16 @@ Idempotent: tracks state via `synaxis-fetch--cache-advice-active'."
     (advice-remove 'url-cache-extract
                    #'synaxis-fetch--url-cache-extract-safe)
     (setq synaxis-fetch--cache-advice-active nil))))
+
+(defun synaxis-fetch--finish-url (url)
+  "Mark URL complete and schedule the drained hook when the queue empties.
+Return non-nil when URL was present in `synaxis-fetch--in-flight'."
+  (when (synaxis-fetch--in-flight-p url)
+    (remhash url synaxis-fetch--in-flight)
+    (when (zerop (hash-table-count synaxis-fetch--in-flight))
+      (synaxis-fetch--cache-advice-toggle nil)
+      (run-at-time 0 nil #'run-hooks 'synaxis-fetch-queue-drained-hook))
+    t))
 
 (defun synaxis-fetch--conditional-headers (feed)
   "Return `If-None-Match' / `If-Modified-Since' headers from FEED, or nil.
@@ -252,19 +262,25 @@ crashing when synaxis does not warm `url-cache-directory'."
       (cond
        ((equal type "scrape")
         (require 'synaxis-scrape)
-        (condition-case err
-            (synaxis-scrape-feed url)
-          (error
-           (message "synaxis: scrape failed for %s: %S" url err)
-           (synaxis-fetch--record-failure url))))
+        (let ((url-queue-parallel-processes synaxis-fetch-max-parallel)
+              (url-queue-timeout synaxis-fetch-timeout))
+          (puthash url t synaxis-fetch--in-flight)
+          (condition-case err
+              (synaxis-scrape-feed
+               url
+               (lambda ()
+                 (synaxis-fetch--finish-url url)))
+            (error
+             (message "synaxis: scrape failed for %s: %S" url err)
+             (synaxis-fetch--record-failure url)
+             (synaxis-fetch--finish-url url)))))
        (t
         (let* ((cond-headers (synaxis-fetch--conditional-headers feed))
                (url-queue-parallel-processes synaxis-fetch-max-parallel)
-               (url-queue-timeout             synaxis-fetch-timeout)
+               (url-queue-timeout synaxis-fetch-timeout)
                (url-request-extra-headers
                 (append cond-headers synaxis-http-request-headers)))
-          (when (zerop (hash-table-count synaxis-fetch--in-flight))
-            (synaxis-fetch--cache-advice-toggle t))
+          (synaxis-fetch--cache-advice-toggle t)
           (puthash url t synaxis-fetch--in-flight)
           (url-queue-retrieve url #'synaxis-fetch--callback (list url) t t)))))))
 
@@ -273,10 +289,7 @@ crashing when synaxis does not warm `url-cache-directory'."
   (let ((buf (current-buffer)))
     (unwind-protect
         (synaxis-fetch--process-response buf url)
-      (remhash url synaxis-fetch--in-flight)
-      (when (zerop (hash-table-count synaxis-fetch--in-flight))
-        (synaxis-fetch--cache-advice-toggle nil)
-        (run-at-time 0 nil #'run-hooks 'synaxis-fetch-queue-drained-hook))
+      (synaxis-fetch--finish-url url)
       (when (buffer-live-p buf)
         (kill-buffer buf)))))
 
