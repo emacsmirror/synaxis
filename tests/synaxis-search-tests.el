@@ -90,7 +90,44 @@
        (synaxis-db-remove-tag id "unread")
        (synaxis-search--redraw-current)
        (goto-char (point-min))
-       (should (equal " " (aref (tabulated-list-get-entry) 1)))))))
+       (should (equal " " (aref (tabulated-list-get-entry) 1)))
+       (should (equal " " (aref (cadr (car tabulated-list-entries)) 1)))))))
+
+(ert-deftest synaxis-search-test-show-entry-reprints-without-refresh ()
+  "Opening an unread row keeps it visible but clears the unread marker."
+  (synaxis-tests--with-tmp
+   (require 'synaxis-show)
+   (let ((id (synaxis-tests--seed-entry
+              "https://example.com/x" "1" "T" 1.0 t)))
+     (synaxis-search)
+     (with-current-buffer "*synaxis*"
+       (goto-char (point-min))
+       (should (equal id (tabulated-list-get-id)))
+       (cl-letf (((symbol-function 'synaxis-show-entry)
+                  (lambda (entry-id peers)
+                    (should (equal id entry-id))
+                    (should (equal (list id) peers))
+                    (synaxis-db-remove-tag entry-id "unread")))
+                 ((symbol-function 'synaxis-db-list-entries)
+                  (lambda (&rest _) (error "unexpected refresh"))))
+         (synaxis-search-show-entry))
+       (goto-char (point-min))
+       (should (equal id (tabulated-list-get-id)))
+       (should (equal " " (aref (tabulated-list-get-entry) 1)))
+       (should (equal " " (aref (cadr (car tabulated-list-entries)) 1)))))))
+
+(ert-deftest synaxis-search-test-format-uses-displayed-search-window ()
+  "Column widths are based on the search window, not the selected window."
+  (with-temp-buffer
+    (synaxis-search-mode)
+    (cl-letf (((symbol-function 'get-buffer-window)
+               (lambda (&rest _) 'search-window))
+              ((symbol-function 'window-width)
+               (lambda (&optional window)
+                 (if (eq window 'search-window) 100 20))))
+      (let ((format (synaxis-search--format)))
+        (should (= 12 (nth 1 (aref format 2))))
+        (should (= 50 (nth 1 (aref format 4))))))))
 
 (ert-deftest synaxis-search-test-set-filter-via-completing-read-multiple ()
   "Calling `synaxis-search-set-filter' interactively pulls from CRM."
