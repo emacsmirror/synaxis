@@ -62,11 +62,22 @@ press `g' on the list buffer and reopen to refresh.")
 
 (defvar-local synaxis-show--current-link nil
   "Original article URL for the entry shown in this buffer.
-Set by `synaxis-show--render-into-buffer' from the entry's
-`:link' so `synaxis-show-browse-entry' works in both DB-backed
-and plist-preview render paths.")
+Set from the entry's `:link' so `synaxis-show-browse-entry' works
+in both DB-backed and plist-preview render paths.")
+
+(defvar-local synaxis-show--entry nil
+  "Entry plist currently rendered in this buffer.")
+
+(defvar-local synaxis-show-width nil
+  "Width used for the most recent `shr' render in this buffer.")
 
 ;;; Rendering
+
+(defun synaxis-show--window-width ()
+  "Return the current show window width in columns."
+  (let ((window (or (get-buffer-window (current-buffer) t)
+                    (selected-window))))
+    (max 20 (1- (window-body-width window)))))
 
 (defun synaxis-show--render-shr (entry)
   "Insert ENTRY's metadata and content into the current buffer."
@@ -92,8 +103,9 @@ and plist-preview render paths.")
      ((string= ctype "text")
       (insert content))
      (t
+      (setq synaxis-show-width (synaxis-show--window-width))
       (let ((shr-use-fonts nil)
-            (shr-width nil)
+            (shr-width synaxis-show-width)
             (start (point)))
         (insert content)
         (shr-render-region start (point)))))))
@@ -137,25 +149,31 @@ and plist-preview render paths.")
 (defun synaxis-show-revert ()
   "Re-render the entry currently shown in this buffer."
   (interactive)
-  (when synaxis-show--entry-id
-    (synaxis-show-entry synaxis-show--entry-id)))
+  (cond
+   (synaxis-show--entry-id
+    (synaxis-show-entry synaxis-show--entry-id))
+   (synaxis-show--entry
+    (synaxis-show-entry-plist synaxis-show--entry))))
 
-(defun synaxis-show--render-into-buffer (entry entry-id peers)
-  "Render ENTRY into `*synaxis-show*' and seed its buffer-local state.
-ENTRY-ID and PEERS are stored as-is (either may be nil for preview
-paths with no DB row).  Returns the buffer."
+(defun synaxis-show--buffer ()
+  "Return the show buffer, initializing its mode when needed."
   (let ((buf (get-buffer-create "*synaxis-show*")))
     (with-current-buffer buf
       (unless (derived-mode-p 'synaxis-show-mode)
-        (synaxis-show-mode))
-      (let ((inhibit-read-only t))
-        (erase-buffer)
-        (funcall synaxis-show-display-function entry)
-        (goto-char (point-min)))
-      (setq synaxis-show--entry-id entry-id
-            synaxis-show--peers peers
-            synaxis-show--current-link (plist-get entry :link)))
+        (synaxis-show-mode)))
     buf))
+
+(defun synaxis-show--render-entry (entry entry-id peers)
+  "Render ENTRY in the current show buffer and seed buffer-local state.
+ENTRY-ID and PEERS are stored as-is; either may be nil for preview paths."
+  (let ((inhibit-read-only t))
+    (erase-buffer)
+    (setq synaxis-show--entry entry
+          synaxis-show--entry-id entry-id
+          synaxis-show--peers peers
+          synaxis-show--current-link (plist-get entry :link))
+    (funcall synaxis-show-display-function entry)
+    (goto-char (point-min))))
 
 (defun synaxis-show-entry (entry-id &optional peers)
   "Display the entry with database id ENTRY-ID.
@@ -166,16 +184,20 @@ any peers already recorded in the show buffer are preserved."
                     (user-error "No entry with id %s" entry-id)))
          (existing (and-let* ((buf (get-buffer "*synaxis-show*")))
                      (buffer-local-value 'synaxis-show--peers buf)))
-         (buf (synaxis-show--render-into-buffer
-               entry entry-id (or peers existing))))
+         (buf (synaxis-show--buffer)))
+    (pop-to-buffer buf)
+    (synaxis-show--render-entry entry entry-id (or peers existing))
     (synaxis-db-remove-tag entry-id "unread")
-    (pop-to-buffer buf)))
+    buf))
 
 (defun synaxis-show-entry-plist (entry)
   "Display ENTRY plist in `*synaxis-show*' without DB lookup or side effects.
 Used by scrape-test and other preview paths that have an entry
 plist in hand but no DB row to refer to."
-  (pop-to-buffer (synaxis-show--render-into-buffer entry nil nil)))
+  (let ((buf (synaxis-show--buffer)))
+    (pop-to-buffer buf)
+    (synaxis-show--render-entry entry nil nil)
+    buf))
 
 (defun synaxis-show--sync-list (id)
   "Refresh `*synaxis*' and move point to the row whose id is ID.
