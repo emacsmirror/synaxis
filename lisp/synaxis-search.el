@@ -162,11 +162,17 @@ Reads `:unread' and `:tags' from ENTRY rather than re-querying the DB."
             tags
             (propertize title 'face title-face))))
 
+(defun synaxis-search--window-width ()
+  "Return the displayed search window width in columns."
+  (if-let* ((window (get-buffer-window (current-buffer) t)))
+      (window-width window)
+    (window-width)))
+
 (defun synaxis-search--format ()
   "Build `tabulated-list-format' from `synaxis-search--columns'.
-Float widths in the spec are scaled by `window-width' at call time,
-so the format reflects the current window size."
-  (let ((w (window-width)))
+Float widths in the spec are scaled by the displayed search window
+at call time, so the format reflects the current window size."
+  (let ((w (synaxis-search--window-width)))
     (apply #'vector
            (mapcar (pcase-lambda (`(,name ,spec ,sort . ,props))
                      (let ((width (if (floatp spec)
@@ -234,6 +240,16 @@ so the format reflects the current window size."
       (synaxis-search-refresh))
     (pop-to-buffer-same-window buf)))
 
+(defun synaxis-search--rebuild-format ()
+  "Recompute the tabulated-list column format for the current window."
+  (setq tabulated-list-format (synaxis-search--format))
+  (tabulated-list-init-header))
+
+(defun synaxis-search--reprint-view ()
+  "Reprint current rows without re-querying the database."
+  (synaxis-search--rebuild-format)
+  (synaxis-tl-print t))
+
 (defun synaxis-search-refresh ()
   "Re-run the current filter's query and repopulate the buffer.
 Also recomputes the column format from `synaxis-search--columns' so
@@ -241,8 +257,7 @@ window resizes are picked up automatically, and rebuilds the
 tag-face cache from the registry."
   (interactive)
   (when (derived-mode-p 'synaxis-search-mode)
-    (setq tabulated-list-format (synaxis-search--format))
-    (tabulated-list-init-header)
+    (synaxis-search--rebuild-format)
     (synaxis-search--rebuild-tag-face-cache)
     (let* ((spec (synaxis-search--compile-filter
                   (or synaxis-search--filter "")))
@@ -270,7 +285,14 @@ tag-face cache from the registry."
   "Re-render the row at point from the latest DB state."
   (when-let* ((id (synaxis-search-current-entry))
               (entry (synaxis-db-get-entry id)))
-    (synaxis-tl-replace-entry id (synaxis-search--entry-columns entry))))
+    (let ((columns (synaxis-search--entry-columns entry)))
+      (setq tabulated-list-entries
+            (mapcar (lambda (row)
+                      (if (equal id (car row))
+                          (list id columns)
+                        row))
+                    tabulated-list-entries))
+      (synaxis-tl-replace-entry id columns))))
 
 (defun synaxis-search-show-entry ()
   "Open the entry at point in the show buffer.
@@ -284,7 +306,8 @@ the next `g')."
     (require 'synaxis-show)
     (synaxis-show-entry id (mapcar #'car tabulated-list-entries))
     (with-current-buffer origin
-      (synaxis-search--redraw-current))))
+      (synaxis-search--redraw-current)
+      (synaxis-search--reprint-view))))
 
 (defun synaxis-search--entry-at-point ()
   "Return the entry plist at point, dispatching by current mode.
