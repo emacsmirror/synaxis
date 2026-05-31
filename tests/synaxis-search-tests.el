@@ -116,6 +116,35 @@
        (should (equal " " (aref (tabulated-list-get-entry) 1)))
        (should (equal " " (aref (cadr (car tabulated-list-entries)) 1)))))))
 
+(ert-deftest synaxis-search-test-show-entry-preserves-non-first-row ()
+  "Opening a non-first row keeps point on that row after repaint."
+  (synaxis-tests--with-tmp
+   (require 'synaxis-show)
+   (let ((first-id (synaxis-tests--seed-entry
+                    "https://example.com/x" "1" "First" 2.0 t))
+         (opened-id (synaxis-tests--seed-entry
+                     "https://example.com/x" "2" "Second" 1.0 t)))
+     (let ((synaxis-search-default-filter ""))
+       (synaxis-search))
+     (with-current-buffer "*synaxis*"
+       (goto-char (point-min))
+       (should (equal first-id (tabulated-list-get-id)))
+       (forward-line 1)
+       (should (equal opened-id (tabulated-list-get-id)))
+       (cl-letf (((symbol-function 'synaxis-show-entry)
+                  (lambda (entry-id peers)
+                    (should (equal opened-id entry-id))
+                    (should (equal (list first-id opened-id) peers))
+                    (synaxis-db-remove-tag entry-id "unread")
+                    (with-current-buffer "*synaxis*"
+                      (goto-char (point-min)))
+                    (pop-to-buffer (get-buffer-create "*synaxis-test-show*"))))
+                 ((symbol-function 'synaxis-db-list-entries)
+                  (lambda (&rest _) (error "unexpected refresh"))))
+         (synaxis-search-show-entry))
+       (with-current-buffer "*synaxis*"
+         (should (equal opened-id (tabulated-list-get-id))))))))
+
 (ert-deftest synaxis-search-test-format-uses-displayed-search-window ()
   "Column widths are based on the search window, not the selected window."
   (with-temp-buffer

@@ -28,6 +28,7 @@
 (require 'parse-time)
 
 (declare-function synaxis-search-refresh "synaxis-search" ())
+(declare-function synaxis-search--restore-entry "synaxis-search" (id &optional fallback))
 
 ;;; Customisation
 
@@ -202,20 +203,14 @@ plist in hand but no DB row to refer to."
 (defun synaxis-show--sync-list (id)
   "Refresh `*synaxis*' and move point to the row whose id is ID.
 No-op if the buffer is gone or not in `synaxis-search-mode'.  If ID
-is filtered out after refresh, point stays where the refresh landed."
+is filtered out after refresh, point falls back to `point-min'."
   (and-let* ((buf (get-buffer "*synaxis*"))
              ((buffer-live-p buf)))
     (with-current-buffer buf
       (when (derived-mode-p 'synaxis-search-mode)
         (require 'synaxis-search)
         (synaxis-search-refresh)
-        (goto-char (point-min))
-        (while (and (not (eobp))
-                    (not (equal id (tabulated-list-get-id))))
-          (forward-line 1))
-        (when (eobp) (goto-char (point-min)))
-        (when-let* ((win (get-buffer-window buf 'visible)))
-          (set-window-point win (point)))))))
+        (synaxis-search--restore-entry id (point-min))))))
 
 (defun synaxis-show--walk (delta)
   "Show the peer entry at DELTA from the current one.

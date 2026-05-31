@@ -245,10 +245,13 @@ at call time, so the format reflects the current window size."
   (setq tabulated-list-format (synaxis-search--format))
   (tabulated-list-init-header))
 
-(defun synaxis-search--reprint-view ()
-  "Reprint current rows without re-querying the database."
+(defun synaxis-search--reprint-view (&optional entry-id)
+  "Reprint current rows without re-querying the database.
+When ENTRY-ID is non-nil, restore point to that row explicitly."
   (synaxis-search--rebuild-format)
-  (synaxis-tl-print t))
+  (synaxis-tl-print)
+  (when entry-id
+    (synaxis-search--restore-entry entry-id)))
 
 (defun synaxis-search-refresh ()
   "Re-run the current filter's query and repopulate the buffer.
@@ -281,9 +284,9 @@ tag-face cache from the registry."
   "Return the entry id at point, or nil."
   (tabulated-list-get-id))
 
-(defun synaxis-search--redraw-current ()
-  "Re-render the row at point from the latest DB state."
-  (when-let* ((id (synaxis-search-current-entry))
+(defun synaxis-search--redraw-current (&optional entry-id)
+  "Re-render ENTRY-ID, or the row at point, from the latest DB state."
+  (when-let* ((id (or entry-id (synaxis-search-current-entry)))
               (entry (synaxis-db-get-entry id)))
     (let ((columns (synaxis-search--entry-columns entry)))
       (setq tabulated-list-entries
@@ -306,8 +309,8 @@ the next `g')."
     (require 'synaxis-show)
     (synaxis-show-entry id (mapcar #'car tabulated-list-entries))
     (with-current-buffer origin
-      (synaxis-search--redraw-current)
-      (synaxis-search--reprint-view))))
+      (synaxis-search--redraw-current id)
+      (synaxis-search--reprint-view id))))
 
 (defun synaxis-search--entry-at-point ()
   "Return the entry plist at point, dispatching by current mode.
@@ -466,14 +469,28 @@ With point on no row, falls back to `synaxis-edit-feed's prompt."
 
 (defun synaxis-search--goto-entry (id)
   "Move point to the tabulated-list row whose id equals ID.
-No-op when no row matches."
+Return the row position, or nil when no row matches."
   (let ((target (save-excursion
                   (goto-char (point-min))
                   (cl-loop until (eobp)
                            for row-id = (tabulated-list-get-id)
                            when (equal id row-id) return (point)
                            do (forward-line 1)))))
-    (when target (goto-char target))))
+    (when target
+      (goto-char target)
+      target)))
+
+(defun synaxis-search--restore-entry (id &optional fallback)
+  "Move buffer and visible window point to entry ID.
+When ID is not present and FALLBACK is non-nil, move buffer and
+visible window point to FALLBACK.  Return the final position, or
+nil when ID is missing and no fallback was given."
+  (let ((pos (or (synaxis-search--goto-entry id) fallback)))
+    (when pos
+      (goto-char pos)
+      (when-let* ((window (get-buffer-window (current-buffer) t)))
+        (set-window-point window pos))
+      pos)))
 
 (defun synaxis-search--auto-refresh ()
   "Refresh every live `synaxis-search-mode' buffer.
