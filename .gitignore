@@ -11,6 +11,7 @@ research
 \#*
 
 *.md
+!AGENTS.md
 *.info
 *.texi
 refs/*
