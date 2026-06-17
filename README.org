@@ -25,7 +25,7 @@ With use-package and Emacs 30+ =:vc= keyword:
 
 #+begin_src elisp
 (use-package synaxis
-  :vc (:url "https://codeberg.org/thanosapollo/synaxis")
+  :vc (:url "https://codeberg.org/thanosapollo/emacs-synaxis")
   :bind ("C-c r" . synaxis))
 #+end_src
 
@@ -90,12 +90,13 @@ Worked example -- the PubMed trending page:
 Once the preview looks right, swap =-test= for the real command:
 
 #+begin_src elisp
-(synaxis-create-feed
- "https://pubmed.ncbi.nlm.nih.gov/trending/?sort=date"
- :title "PubMed Trending"
- :tags '("med")
- :url-selector ".full-docsum"
- :content-selector ".abstract-content.selected")
+  (require 'synaxis-scrape)
+  (synaxis-create-feed
+   "https://pubmed.ncbi.nlm.nih.gov/trending/?sort=date"
+   :title "PubMed Trending"
+   :tags '("med")
+   :url-selector ".full-docsum"
+   :content-selector ".abstract-content.selected")
 #+end_src
 
 A second example showing every key in use; Medscape with a date
@@ -103,14 +104,15 @@ selector and a cleanup list to strip share widgets out of article
 bodies:
 
 #+begin_src elisp
-(synaxis-create-feed-test ;; just remove -test to add as a feed
- "https://www.medscape.com/index/list_13470_0"
- :title "Medscape"
- :tags '("med")
- :url-selector "#archives li"
- :date-selector ".byline"
- :content-selector ".article__body-maincontent"
- :content-cleanup ".share-holder, .socials-container")
+  (require 'synaxis-scrape)
+  (synaxis-create-feed-test ;; just remove -test to add as a feed
+   "https://www.medscape.com/index/list_13470_0"
+   :title "Medscape"
+   :tags '("med")
+   :url-selector "#archives li"
+   :date-selector ".byline"
+   :content-selector ".article__body-maincontent"
+   :content-cleanup ".share-holder, .socials-container")
 #+end_src
 
 * Filter language
@@ -134,13 +136,13 @@ Quote values containing whitespace: =title:"drug interaction"=.
 
 Date specs:
 
-| Spec                    | Meaning                              |
-|-------------------------+--------------------------------------|
-| =today=, =yesterday=    | Calendar day window.                 |
-| =thisweek=, =thismonth= | Open-ended back to start of period.  |
-| =Nd=, =Nw=, =Nm=, =Ny=  | Last N days / weeks / months / years. |
-| =YYYY-MM-DD=            | A single calendar day.               |
-| =LO..HI=, =LO..=, =..HI= | Range; either end open.             |
+| Spec                     | Meaning                               |
+|--------------------------+---------------------------------------|
+| =today=, =yesterday=     | Calendar day window.                  |
+| =thisweek=, =thismonth=  | Open-ended back to start of period.   |
+| =Nd=, =Nw=, =Nm=, =Ny=   | Last N days / weeks / months / years. |
+| =YYYY-MM-DD=             | A single calendar day.                |
+| =LO..HI=, =LO..=, =..HI= | Range; either end open.               |
 
 Examples:
 
