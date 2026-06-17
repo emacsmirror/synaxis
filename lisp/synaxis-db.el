@@ -3,6 +3,7 @@
 ;; Copyright (C) 2026 Thanos Apollo
 
 ;; Author: Thanos Apollo <public@thanosapollo.org>
+;; Maintainer: Thanos Apollo <public@thanosapollo.org>
 ;; Keywords: news, hypermedia, rss, atom
 ;; URL: https://codeberg.org/thanosapollo/emacs-synaxis
 
@@ -45,7 +46,8 @@ entries, auto-save) honours this flag.  Defined here because
   (expand-file-name "synaxis/synaxis.db" user-emacs-directory)
   "Path to the synaxis SQLite database."
   :type 'file
-  :group 'synaxis)
+  :group 'synaxis
+  :package-version '(synaxis . "0.1"))
 
 ;;; Transactions
 
@@ -444,14 +446,22 @@ caps the result count.  Results are ordered by date descending."
 Each function takes the new entry's id.  Not called when an existing
 entry is updated.")
 
-(defun synaxis-db-upsert-with-tags (url autotags entry)
-  "Upsert ENTRY under feed URL and tag fresh inserts.
+(defun synaxis-db-upsert-with-tags (url autotags entry &optional preserve-date)
+  "Upsert ENTRY under feed URL and tag newly inserted rows.
 ENTRY's `:feed-url' is set by this helper.  When the row is newly
 inserted, applies the `unread' tag plus every tag in AUTOTAGS and
-runs `synaxis-new-entry-hook' with the new id.  Returns the id."
+runs `synaxis-new-entry-hook' with the new id.  Returns the id.
+
+When PRESERVE-DATE is non-nil and the row already exists, its
+stored `:date' is kept rather than overwritten -- first-seen
+semantics for feeds whose dates are pull-time (scrapes)."
   (let* ((entry     (plist-put entry :feed-url url))
          (source-id (plist-get entry :source-id))
          (existing  (synaxis-db-find-entry url source-id))
+         (entry     (if (and preserve-date existing)
+                        (plist-put entry :date
+                                   (plist-get (synaxis-db-get-entry existing) :date))
+                      entry))
          (id        (synaxis-db-upsert-entry entry)))
     (unless existing
       (synaxis-db-add-tag id "unread")

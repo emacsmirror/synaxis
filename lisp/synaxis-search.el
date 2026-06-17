@@ -3,6 +3,7 @@
 ;; Copyright (C) 2026 Thanos Apollo
 
 ;; Author: Thanos Apollo <public@thanosapollo.org>
+;; Maintainer: Thanos Apollo <public@thanosapollo.org>
 ;; Keywords: news, hypermedia, rss, atom
 ;; URL: https://codeberg.org/thanosapollo/emacs-synaxis
 
@@ -54,14 +55,16 @@
   "Initial filter for the list buffer.
 See `synaxis-filter-parse' for the syntax."
   :type 'string
-  :group 'synaxis)
+  :group 'synaxis
+  :package-version '(synaxis . "0.1"))
 
 (defcustom synaxis-search-default-limit nil
   "Default maximum number of entries shown in the list buffer.
 Nil means no limit -- the filter returns every matching row.
 Override per query with `#N' in the filter string."
   :type '(choice (const :tag "No limit" nil) integer)
-  :group 'synaxis)
+  :group 'synaxis
+  :package-version '(synaxis . "0.1"))
 
 (defconst synaxis-search--columns
   `(("Date"  10        t)
@@ -79,29 +82,34 @@ integer widths are absolute.")
 (defface synaxis-search-unread-face
   '((t :inherit default :weight bold))
   "Face for unread entry titles."
-  :group 'synaxis)
+  :group 'synaxis
+  :package-version '(synaxis . "0.1"))
 
 (defface synaxis-search-read-face
   '((t :inherit font-lock-comment-face))
   "Face for already-read entry titles."
-  :group 'synaxis)
+  :group 'synaxis
+  :package-version '(synaxis . "0.1"))
 
 (defface synaxis-search-feed-face
   '((t :inherit font-lock-type-face))
   "Face for the feed-name column."
-  :group 'synaxis)
+  :group 'synaxis
+  :package-version '(synaxis . "0.1"))
 
 (defface synaxis-search-date-face
   '((t :inherit font-lock-comment-face))
   "Face for the date column."
-  :group 'synaxis)
+  :group 'synaxis
+  :package-version '(synaxis . "0.1"))
 
 (defface synaxis-search-tag-face
   '((t :inherit font-lock-keyword-face))
   "Default face for entry tags in the list buffer.
 Per-tag faces from the registry (set via `synaxis-db-set-tag-face')
 override this default."
-  :group 'synaxis)
+  :group 'synaxis
+  :package-version '(synaxis . "0.1"))
 
 ;;; Buffer-local state
 

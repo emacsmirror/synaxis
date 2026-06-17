@@ -3,6 +3,7 @@
 ;; Copyright (C) 2026 Thanos Apollo
 
 ;; Author: Thanos Apollo <public@thanosapollo.org>
+;; Maintainer: Thanos Apollo <public@thanosapollo.org>
 ;; Keywords: news, hypermedia, rss, atom
 ;; URL: https://codeberg.org/thanosapollo/emacs-synaxis
 ;; Version: 0.1.0
@@ -49,6 +50,7 @@
 (defconst synaxis-version "0.1.0"
   "Current synaxis version.")
 
+(require 'cl-lib)
 (require 'synaxis-db)
 (require 'synaxis-fetch)
 (require 'synaxis-filter)
@@ -63,8 +65,9 @@ Set to e.g. 1800 (30 minutes) to fetch in the background while
 synaxis is open.  Changes take effect the next time `synaxis'
 runs."
   :type '(choice (const :tag "Disabled" nil)
-                 (integer :tag "Seconds"))
-  :group 'synaxis)
+                 (natnum :tag "Seconds"))
+  :group 'synaxis
+  :package-version '(synaxis . "0.1"))
 
 (defvar synaxis--update-timer nil
   "Active timer scheduled by `synaxis--update-maybe-start-timer'.")
@@ -120,7 +123,8 @@ Example:
                         ((:filter (string :tag "Filter"))
                          (:add    (repeat (string :tag "Tag to add")))
                          (:remove (repeat (string :tag "Tag to remove"))))))
-  :group 'synaxis)
+  :group 'synaxis
+  :package-version '(synaxis . "0.1"))
 
 (defun synaxis-tag-rules--filter-sql (filter)
   "Compile FILTER to (WHERE . PARAMS)."
@@ -271,6 +275,7 @@ fetch overwrites it from the feed's own `<title>'."
   (synaxis-db-add-feed url (and title (list :title title)))
   (message "synaxis: added %s" url))
 
+;;;###autoload
 (defun synaxis-remove-feed (url)
   "Remove the feed at URL after confirmation.
 Cascades to its entries and tags."

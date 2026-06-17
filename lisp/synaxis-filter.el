@@ -3,6 +3,7 @@
 ;; Copyright (C) 2026 Thanos Apollo
 
 ;; Author: Thanos Apollo <public@thanosapollo.org>
+;; Maintainer: Thanos Apollo <public@thanosapollo.org>
 ;; Keywords: news, hypermedia, rss, atom
 ;; URL: https://codeberg.org/thanosapollo/emacs-synaxis
 
@@ -395,7 +396,7 @@ Reads from the `tags' registry (schema v2+); no DISTINCT scan."
                  ORDER BY title COLLATE NOCASE;"))))
 
 (defun synaxis-filter--quote-if-needed (s)
-  "Wrap S in double quotes when it contains whitespace."
+  "Wrap S in double quotes when whitespace is present."
   (if (and (stringp s) (string-match-p "[ \t]" s))
       (format "\"%s\"" s)
     s))

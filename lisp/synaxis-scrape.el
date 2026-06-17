@@ -3,6 +3,7 @@
 ;; Copyright (C) 2026 Thanos Apollo
 
 ;; Author: Thanos Apollo <public@thanosapollo.org>
+;; Maintainer: Thanos Apollo <public@thanosapollo.org>
 ;; Keywords: news, hypermedia, rss, atom
 ;; URL: https://codeberg.org/thanosapollo/emacs-synaxis
 
@@ -49,8 +50,9 @@
 (defcustom synaxis-scrape-max-parallel 4
   "Maximum concurrent article fetches per scrape cycle.
 Bound around `url-queue-retrieve' as `url-queue-parallel-processes'."
-  :type 'integer
-  :group 'synaxis)
+  :type 'natnum
+  :group 'synaxis
+  :package-version '(synaxis . "0.1"))
 
 ;;; Selector AST
 ;;
@@ -218,7 +220,8 @@ Strips HTTP headers if present, decodes as UTF-8 fallback."
 Fills in zeros for missing hour/minute/second so date-only strings
 like \"May 15, 2026\" (no time component) still encode.  Preserves
 the timezone from the decoded time when present (e.g. trailing
-`Z'), so an explicit UTC stays UTC."
+`Z').  A value with no timezone (a bare date) is treated as UTC, so
+date-only inputs do not shift a day under a non-UTC local zone."
   (and (stringp s) (not (string-empty-p s))
        (condition-case nil
            (let ((decoded (parse-time-string s)))
@@ -232,7 +235,7 @@ the timezone from the decoded time when present (e.g. trailing
                                 (decoded-time-day decoded)
                                 (decoded-time-month decoded)
                                 (decoded-time-year decoded)
-                                (decoded-time-zone decoded)))))
+                                (or (decoded-time-zone decoded) t)))))
          (error nil))))
 
 (defun synaxis-scrape--children-text (node)
@@ -252,6 +255,15 @@ SELECTOR may be nil; returns nil if no match."
          (cl-loop for n in nodes
                   for d = (synaxis-scrape--node-date n)
                   when d return d))))
+
+(defun synaxis-scrape--prefer-date (candidate fallback)
+  "Return CANDIDATE when it is a usable date, else FALLBACK.
+FALLBACK is the entry's pull-time date.  CANDIDATE comes from a
+`date-selector' and may be nil, or a future cover date (PubMed
+issue dates can be months ahead); only a non-nil value no later
+than FALLBACK is honoured.  Both are canonical UTC ISO strings, so
+the comparison is a plain lexical one."
+  (if (and candidate (not (string< fallback candidate))) candidate fallback))
 
 ;;; Content cleanup
 
@@ -308,9 +320,10 @@ BASE-URL resolves relative hrefs.  RULES is the rule plist."
           :title        (synaxis-scrape--strip-title
                          raw-title (plist-get rules :title-cleanup))
           :link         link
-          :date         (or (synaxis-scrape--extract-date
-                             node (plist-get rules :date-selector))
-                            (synaxis-parse--time-to-iso (current-time)))
+          :date         (synaxis-scrape--prefer-date
+                         (synaxis-scrape--extract-date
+                          node (plist-get rules :date-selector))
+                         (synaxis-parse--time-to-iso (current-time)))
           :content      (synaxis-scrape--node-html node)
           :content-type "html")))
 
@@ -402,7 +415,9 @@ Calls DONE-CALLBACK with the entry list once all pending fetches return."
                (when (plist-get result :content)
                  (plist-put entry :content (plist-get result :content)))
                (when (plist-get result :date)
-                 (plist-put entry :date (plist-get result :date))))
+                 (plist-put entry :date
+                            (synaxis-scrape--prefer-date
+                             (plist-get result :date) (plist-get entry :date)))))
            (when (buffer-live-p buf)
              (kill-buffer buf))
            (synaxis-scrape--tracker-tick tracker entry done-callback))))
@@ -434,7 +449,7 @@ CALLBACK receives the augmented entry list.  When RULES lacks
 ;;; Top-level orchestration
 
 (declare-function synaxis-db--ensure-open "synaxis-db" ())
-(declare-function synaxis-db-upsert-with-tags "synaxis-db" (url autotags entry))
+(declare-function synaxis-db-upsert-with-tags "synaxis-db" (url autotags entry &optional preserve-date))
 (declare-function synaxis-db-set-feed-cache-headers "synaxis-db" (url plist))
 (declare-function synaxis-db-set-feed-title-if-empty "synaxis-db" (url title))
 (declare-function synaxis-db-get-scrape-rule "synaxis-db" (url))
@@ -483,11 +498,12 @@ of them is non-nil."
                :failures failures))))
 
 (defun synaxis-scrape--save-entries (url entries)
-  "Upsert ENTRIES under feed URL; fire `synaxis-new-entry-hook' for inserts."
+  "Upsert ENTRIES under feed URL; fire `synaxis-new-entry-hook' for new rows."
   (let* ((feed (synaxis-db-get-feed url))
          (autotags (append (plist-get (plist-get feed :meta) :autotags) nil)))
-    (cl-loop for entry in entries
-             do (synaxis-db-upsert-with-tags url autotags entry))))
+    (dolist (entry entries)
+      ;; Scraped dates are pull-time; preserve first-seen across re-fetches.
+      (synaxis-db-upsert-with-tags url autotags entry t))))
 
 (defun synaxis-scrape--process-html (url html rules callback)
   "Extract entries from HTML at URL under RULES and pass them to CALLBACK."
@@ -648,7 +664,10 @@ Inhibits Emacs's auth prompt on 401 responses."
                    (when (plist-get result :content)
                      (setq e (plist-put e :content (plist-get result :content))))
                    (when (plist-get result :date)
-                     (setq e (plist-put e :date (plist-get result :date))))
+                     (setq e (plist-put e :date
+                                        (synaxis-scrape--prefer-date
+                                         (plist-get result :date)
+                                         (plist-get e :date)))))
                    e)
                (when (buffer-live-p buf)
                  (kill-buffer buf))))

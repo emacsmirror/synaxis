@@ -3,6 +3,7 @@
 ;; Copyright (C) 2026 Thanos Apollo
 
 ;; Author: Thanos Apollo <public@thanosapollo.org>
+;; Maintainer: Thanos Apollo <public@thanosapollo.org>
 ;; Keywords: news, hypermedia, rss, atom
 ;; URL: https://codeberg.org/thanosapollo/emacs-synaxis
 
@@ -29,6 +30,7 @@
 
 ;;; Code:
 
+(require 'cl-lib)
 (require 'url-queue)
 (require 'synaxis-db)
 (require 'synaxis-parse)
@@ -41,13 +43,15 @@
   "Maximum number of in-flight feed fetches.
 Bound around the `url-queue-retrieve' call as
 `url-queue-parallel-processes'."
-  :type 'integer
-  :group 'synaxis)
+  :type 'natnum
+  :group 'synaxis
+  :package-version '(synaxis . "0.1"))
 
 (defcustom synaxis-fetch-timeout 30
   "Per-request timeout in seconds, bound as `url-queue-timeout'."
-  :type 'integer
-  :group 'synaxis)
+  :type 'natnum
+  :group 'synaxis
+  :package-version '(synaxis . "0.1"))
 
 (defcustom synaxis-http-request-headers
   '(("Accept-Language" . "en-US,en;q=0.9")
@@ -62,7 +66,8 @@ so consent gates are skipped on the major CMPs.  Adjust
 `Accept-Language' to bias content to your locale (e.g.
 \"el-GR,en;q=0.5\")."
   :type '(alist :key-type string :value-type string)
-  :group 'synaxis)
+  :group 'synaxis
+  :package-version '(synaxis . "0.1"))
 
 ;;; Hooks
 

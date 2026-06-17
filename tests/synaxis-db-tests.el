@@ -194,6 +194,36 @@
          (should (equal "Second" (plist-get row :title)))
          (should (equal "1970-01-01T00:00:02Z" (plist-get row :date))))))))
 
+(ert-deftest synaxis-db-test-upsert-with-tags-preserve-date-keeps-first-seen ()
+  "With PRESERVE-DATE, a re-upsert keeps the original stored date."
+  (synaxis-tests--with-tmp
+   (synaxis-db-add-feed "https://example.com/s")
+   (synaxis-db-upsert-with-tags
+    "https://example.com/s" nil
+    (list :source-id "x" :title "First" :date "2026-06-01T00:00:00Z") t)
+   (synaxis-db-upsert-with-tags
+    "https://example.com/s" nil
+    (list :source-id "x" :title "Second" :date "2026-06-10T00:00:00Z") t)
+   (let* ((id (synaxis-db-find-entry "https://example.com/s" "x"))
+          (row (synaxis-db-get-entry id)))
+     ;; Date held at first-seen; other fields still update.
+     (should (equal "2026-06-01T00:00:00Z" (plist-get row :date)))
+     (should (equal "Second" (plist-get row :title))))))
+
+(ert-deftest synaxis-db-test-upsert-with-tags-without-preserve-updates-date ()
+  "Without PRESERVE-DATE, a re-upsert updates the date (default)."
+  (synaxis-tests--with-tmp
+   (synaxis-db-add-feed "https://example.com/s")
+   (synaxis-db-upsert-with-tags
+    "https://example.com/s" nil
+    (list :source-id "x" :title "First" :date "2026-06-01T00:00:00Z"))
+   (synaxis-db-upsert-with-tags
+    "https://example.com/s" nil
+    (list :source-id "x" :title "Second" :date "2026-06-10T00:00:00Z"))
+   (let* ((id (synaxis-db-find-entry "https://example.com/s" "x"))
+          (row (synaxis-db-get-entry id)))
+     (should (equal "2026-06-10T00:00:00Z" (plist-get row :date))))))
+
 (ert-deftest synaxis-db-test-get-entry-by-id ()
   "All entry columns round-trip, including JSON meta."
   (synaxis-tests--with-tmp

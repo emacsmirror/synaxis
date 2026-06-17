@@ -152,10 +152,9 @@ Also: a second empty span with the same class is skipped."
   (let* ((dom (synaxis-scrape-tests--dom "scrape-medscape-like.html"))
          (date (synaxis-scrape--extract-date dom ".article-date")))
     (should (stringp date))
-    ;; Date-only inputs encode at local midnight; UTC representation may
-    ;; land on the previous day depending on the test runner's TZ.  Day
-    ;; window is +/- 1.
-    (should (string-match-p "\\`2026-05-1[45]" date))))
+    ;; Date-only inputs encode at UTC midnight, so the day is stable
+    ;; regardless of the test runner's timezone.
+    (should (string-match-p "\\`2026-05-15" date))))
 
 (ert-deftest synaxis-scrape-test-parse-time-loose-date-only ()
   "Date strings without a time component encode to start-of-day."
@@ -164,6 +163,26 @@ Also: a second empty span with the same class is skipped."
     (should (stringp t1))
     (should (stringp t2))
     (should (equal t1 t2))))
+
+(ert-deftest synaxis-scrape-test-parse-time-loose-date-only-is-utc ()
+  "A bare date encodes to UTC midnight, not local midnight."
+  (should (equal "2026-05-15T00:00:00Z"
+                 (synaxis-scrape--parse-time-loose "May 15, 2026"))))
+
+(ert-deftest synaxis-scrape-test-prefer-date-keeps-valid-past ()
+  (should (equal "2026-01-01T00:00:00Z"
+                 (synaxis-scrape--prefer-date "2026-01-01T00:00:00Z"
+                                              "2026-06-18T00:00:00Z"))))
+
+(ert-deftest synaxis-scrape-test-prefer-date-rejects-future ()
+  "A future cover date falls back to the pull-time date."
+  (should (equal "2026-06-18T00:00:00Z"
+                 (synaxis-scrape--prefer-date "2026-12-31T00:00:00Z"
+                                              "2026-06-18T00:00:00Z"))))
+
+(ert-deftest synaxis-scrape-test-prefer-date-nil-falls-back ()
+  (should (equal "2026-06-18T00:00:00Z"
+                 (synaxis-scrape--prefer-date nil "2026-06-18T00:00:00Z"))))
 
 ;;; Content cleanup
 

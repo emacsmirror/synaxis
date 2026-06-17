@@ -3,6 +3,7 @@
 ;; Copyright (C) 2026 Thanos Apollo
 
 ;; Author: Thanos Apollo <public@thanosapollo.org>
+;; Maintainer: Thanos Apollo <public@thanosapollo.org>
 ;; Keywords: news, hypermedia, rss, atom
 ;; URL: https://codeberg.org/thanosapollo/emacs-synaxis
 
@@ -44,19 +45,22 @@
   "Function called to render an entry into the current buffer.
 The function takes one argument, the entry plist."
   :type '(choice (function-item synaxis-show-render-shr) function)
-  :group 'synaxis)
+  :group 'synaxis
+  :package-version '(synaxis . "0.1"))
 
 ;;; Faces
 
 (defface synaxis-show-title-face
   '((t :inherit variable-pitch :weight bold :height 1.3))
   "Face for the entry title in the show buffer."
-  :group 'synaxis)
+  :group 'synaxis
+  :package-version '(synaxis . "0.1"))
 
 (defface synaxis-show-meta-face
   '((t :inherit shadow))
   "Face for entry metadata (feed title, date) in the show buffer."
-  :group 'synaxis)
+  :group 'synaxis
+  :package-version '(synaxis . "0.1"))
 
 ;;; Buffer-local state
 
