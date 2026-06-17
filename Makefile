@@ -1,6 +1,6 @@
-.PHONY: all compile do-compile test do-test do-test-summary test-oneshot \
-        do-test-oneshot lint do-lint lint-checkdoc lint-package-lint \
-        lint-relint autoloads load clean
+.PHONY: all compile do-compile native-comp do-native-comp test do-test \
+        do-test-summary test-oneshot do-test-oneshot lint do-lint \
+        lint-checkdoc lint-package-lint lint-relint autoloads load clean
 
 NIX := $(shell command -v nix 2>/dev/null)
 
@@ -44,6 +44,27 @@ compile:
 do-compile:
 	$(BATCH) --eval "(setq byte-compile-error-on-warn t)" \
 	    -f batch-byte-compile $(LISP)
+
+native-comp:
+	@$(ENV_MAKE) do-native-comp
+
+# Native-compile each file and fail on "not known to be defined" --
+# catches missing `require's (a macro used without its library compiles
+# under byte-comp by transitive load order, but native-comp flags it).
+do-native-comp:
+	@fails=0; \
+	for f in $(LISP); do \
+	  output=$$($(BATCH) --eval "(native-compile \"$$f\")" 2>&1); \
+	  matched=$$(echo "$$output" | grep "is not known to be defined" || true); \
+	  if [ -n "$$matched" ]; then \
+	    printf "\033[31m%s\033[0m\n" "$$f"; \
+	    echo "$$matched"; \
+	    fails=1; \
+	  fi; \
+	done; \
+	if [ $$fails -eq 0 ]; then \
+	  printf "\033[32mnative-comp clean\033[0m\n"; \
+	else exit 1; fi
 
 test:
 	@$(ENV_MAKE) -j$(JOBS) -Otarget do-test
