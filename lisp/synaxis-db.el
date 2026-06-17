@@ -4,7 +4,7 @@
 
 ;; Author: Thanos Apollo <public@thanosapollo.org>
 ;; Keywords: news, hypermedia, rss, atom
-;; URL: https://codeberg.org/thanosapollo/synaxis
+;; URL: https://codeberg.org/thanosapollo/emacs-synaxis
 
 ;; This file is NOT part of GNU Emacs.
 
@@ -12,6 +12,14 @@
 ;; it under the terms of the GNU General Public License as published by
 ;; the Free Software Foundation, either version 3 of the License, or
 ;; (at your option) any later version.
+
+;; This program is distributed in the hope that it will be useful,
+;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;; GNU General Public License for more details.
+
+;; You should have received a copy of the GNU General Public License
+;; along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
@@ -447,7 +455,7 @@ runs `synaxis-new-entry-hook' with the new id.  Returns the id."
          (id        (synaxis-db-upsert-entry entry)))
     (unless existing
       (synaxis-db-add-tag id "unread")
-      (cl-loop for tag in autotags do (synaxis-db-add-tag id tag))
+      (dolist (tag autotags) (synaxis-db-add-tag id tag))
       (run-hook-with-args 'synaxis-new-entry-hook id))
     id))
 
@@ -639,14 +647,14 @@ Recognised keys: `:url-selector', `:url-pattern',
                             content_selector, meta
                      FROM scrape_rules WHERE feed_url = ?;"
                     (list url)))))
-    (when row
-      (let* ((base  (synaxis-db--scrape-rule-row row))
-             (extra (plist-get base :meta)))
-        ;; Spread the extras-meta plist back onto the top level.
-        (thread-first base
-                      (plist-put :content-cleanup (plist-get extra :content-cleanup))
-                      (plist-put :limit           (plist-get extra :limit))
-                      (plist-put :meta            (plist-get extra :extra)))))))
+    (and row
+         (let* ((base (synaxis-db--scrape-rule-row row))
+                (extra (plist-get base :meta)))
+           ;; Spread the extras-meta plist back onto the top level.
+           (thread-first base
+                         (plist-put :content-cleanup (plist-get extra :content-cleanup))
+                         (plist-put :limit (plist-get extra :limit))
+                         (plist-put :meta (plist-get extra :extra)))))))
 
 (defun synaxis-db-list-scrape-rules ()
   "Return an alist of (URL . PLIST) for every scrape rule."

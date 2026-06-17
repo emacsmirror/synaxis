@@ -4,7 +4,7 @@
 
 ;; Author: Thanos Apollo <public@thanosapollo.org>
 ;; Keywords: news, hypermedia, rss, atom
-;; URL: https://codeberg.org/thanosapollo/synaxis
+;; URL: https://codeberg.org/thanosapollo/emacs-synaxis
 
 ;; This file is NOT part of GNU Emacs.
 
@@ -12,6 +12,14 @@
 ;; it under the terms of the GNU General Public License as published by
 ;; the Free Software Foundation, either version 3 of the License, or
 ;; (at your option) any later version.
+
+;; This program is distributed in the hope that it will be useful,
+;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;; GNU General Public License for more details.
+
+;; You should have received a copy of the GNU General Public License
+;; along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
@@ -263,7 +271,7 @@ returns NODE for chaining."
 Either argument may be nil."
   (let ((s (or title "")))
     (when (and cleanup (not (string-empty-p cleanup)))
-      (setq s (replace-regexp-in-string (regexp-quote cleanup) "" s)))
+      (setq s (string-replace cleanup "" s)))
     (string-trim s)))
 
 ;;; Pure extraction
@@ -315,7 +323,7 @@ BASE-URL resolves relative hrefs.  RULES is the rule plist."
               entries)
            entries)))
     (if (and (integerp limit) (> limit 0))
-        (cl-subseq filtered 0 (min limit (length filtered)))
+        (take limit filtered)
       filtered)))
 
 (defun synaxis-scrape--dedupe (entries)

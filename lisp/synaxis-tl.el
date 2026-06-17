@@ -1,9 +1,12 @@
 ;;; synaxis-tl.el --- Fast tabulated-list operations for large datasets  -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2026  Free Software Foundation, Inc.
+;; Copyright (C) 2026 Thanos Apollo
 
 ;; Author: Thanos Apollo <public@thanosapollo.org>
-;; Keywords: extensions
+;; Keywords: news, hypermedia, rss, atom
+;; URL: https://codeberg.org/thanosapollo/emacs-synaxis
+
+;; This file is NOT part of GNU Emacs.
 
 ;; This program is free software; you can redistribute it and/or modify
 ;; it under the terms of the GNU General Public License as published by
@@ -154,21 +157,21 @@ walking through `tabulated-list-format' widths starting from
 Mirrors `tabulated-list--get-sorter': uses `tabulated-list-sort-key'
 and `tabulated-list-format' to build the comparator.  Returns nil
 when no sort key is set or the column is not sortable."
-  (when (and tabulated-list-sort-key
-             (car tabulated-list-sort-key))
-    (let* ((sort-col (car tabulated-list-sort-key))
-           (n (tabulated-list--column-number sort-col))
-           (sorter (nth 2 (aref tabulated-list-format n))))
-      (when (eq sorter t)
-        (setq sorter (lambda (a b)
-                       (let ((a (aref (cadr a) n))
-                             (b (aref (cadr b) n)))
-                         (string< (if (stringp a) a (car a))
-                                  (if (stringp b) b (car b)))))))
-      (when sorter
-        (if (cdr tabulated-list-sort-key)
-            (lambda (a b) (funcall sorter b a))
-          sorter)))))
+  (and tabulated-list-sort-key
+       (car tabulated-list-sort-key)
+       (let* ((sort-col (car tabulated-list-sort-key))
+              (n (tabulated-list--column-number sort-col))
+              (sorter (nth 2 (aref tabulated-list-format n))))
+         (when (eq sorter t)
+           (setq sorter (lambda (a b)
+                          (let ((a (aref (cadr a) n))
+                                (b (aref (cadr b) n)))
+                            (string< (if (stringp a) a (car a))
+                                     (if (stringp b) b (car b)))))))
+         (and sorter
+              (if (cdr tabulated-list-sort-key)
+                  (lambda (a b) (funcall sorter b a))
+                sorter)))))
 
 ;;; Bulk rendering
 

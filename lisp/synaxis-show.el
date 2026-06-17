@@ -4,7 +4,7 @@
 
 ;; Author: Thanos Apollo <public@thanosapollo.org>
 ;; Keywords: news, hypermedia, rss, atom
-;; URL: https://codeberg.org/thanosapollo/synaxis
+;; URL: https://codeberg.org/thanosapollo/emacs-synaxis
 
 ;; This file is NOT part of GNU Emacs.
 
@@ -12,6 +12,14 @@
 ;; it under the terms of the GNU General Public License as published by
 ;; the Free Software Foundation, either version 3 of the License, or
 ;; (at your option) any later version.
+
+;; This program is distributed in the hope that it will be useful,
+;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;; GNU General Public License for more details.
+
+;; You should have received a copy of the GNU General Public License
+;; along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
@@ -32,10 +40,10 @@
 
 ;;; Customisation
 
-(defcustom synaxis-show-display-function #'synaxis-show--render-shr
+(defcustom synaxis-show-display-function #'synaxis-show-render-shr
   "Function called to render an entry into the current buffer.
 The function takes one argument, the entry plist."
-  :type 'function
+  :type '(choice (function-item synaxis-show-render-shr) function)
   :group 'synaxis)
 
 ;;; Faces
@@ -69,7 +77,7 @@ in both DB-backed and plist-preview render paths.")
 (defvar-local synaxis-show--entry nil
   "Entry plist currently rendered in this buffer.")
 
-(defvar-local synaxis-show-width nil
+(defvar-local synaxis-show--width nil
   "Width used for the most recent `shr' render in this buffer.")
 
 ;;; Rendering
@@ -80,7 +88,7 @@ in both DB-backed and plist-preview render paths.")
                     (selected-window))))
     (max 20 (1- (window-body-width window)))))
 
-(defun synaxis-show--render-shr (entry)
+(defun synaxis-show-render-shr (entry)
   "Insert ENTRY's metadata and content into the current buffer."
   (insert (propertize (or (plist-get entry :title) "(untitled)")
                       'face 'synaxis-show-title-face)
@@ -104,9 +112,9 @@ in both DB-backed and plist-preview render paths.")
      ((string= ctype "text")
       (insert content))
      (t
-      (setq synaxis-show-width (synaxis-show--window-width))
+      (setq synaxis-show--width (synaxis-show--window-width))
       (let ((shr-use-fonts nil)
-            (shr-width synaxis-show-width)
+            (shr-width synaxis-show--width)
             (start (point)))
         (insert content)
         (shr-render-region start (point)))))))

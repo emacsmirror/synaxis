@@ -15,7 +15,7 @@
 
 (ert-deftest synaxis-show-test-render-shr-inserts-title-and-content ()
   (with-temp-buffer
-    (synaxis-show--render-shr
+    (synaxis-show-render-shr
      '(:title "Hello"
               :feed-title "F"
               :date "2024-01-02T03:04:05Z"
@@ -27,7 +27,7 @@
 
 (ert-deftest synaxis-show-test-render-handles-text-content-type ()
   (with-temp-buffer
-    (synaxis-show--render-shr
+    (synaxis-show-render-shr
      '(:title "T"
               :feed-title "F"
               :date "1970-01-01T00:00:01Z"
@@ -38,7 +38,7 @@
 
 (ert-deftest synaxis-show-test-render-handles-missing-content ()
   (with-temp-buffer
-    (synaxis-show--render-shr
+    (synaxis-show-render-shr
      '(:title "T" :feed-title "F" :date "1970-01-01T00:00:01Z" :content nil :content-type nil))
     (should (string-match-p "T"
                             (buffer-substring-no-properties (point-min) (point-max))))))

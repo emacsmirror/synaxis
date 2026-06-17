@@ -4,7 +4,7 @@
 
 ;; Author: Thanos Apollo <public@thanosapollo.org>
 ;; Keywords: news, hypermedia, rss, atom
-;; URL: https://codeberg.org/thanosapollo/synaxis
+;; URL: https://codeberg.org/thanosapollo/emacs-synaxis
 ;; Version: 0.1.0
 ;; Package-Requires: ((emacs "29.1") (keymap-popup "0.2.1"))
 
@@ -41,7 +41,7 @@
   "Feed reader with SQLite storage."
   :group 'applications
   :prefix "synaxis-"
-  :link '(url-link "https://codeberg.org/thanosapollo/synaxis"))
+  :link '(url-link "https://codeberg.org/thanosapollo/emacs-synaxis"))
 
 (defconst synaxis-version "0.1.0"
   "Current synaxis version.")
