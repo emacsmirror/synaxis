@@ -413,11 +413,12 @@ Calls DONE-CALLBACK with the entry list once all pending fetches return."
              (let ((result (ignore-errors
                              (synaxis-scrape--apply-content buf rules))))
                (when (plist-get result :content)
-                 (plist-put entry :content (plist-get result :content)))
+                 (setq entry (plist-put entry :content (plist-get result :content))))
                (when (plist-get result :date)
-                 (plist-put entry :date
-                            (synaxis-scrape--prefer-date
-                             (plist-get result :date) (plist-get entry :date)))))
+                 (setq entry (plist-put entry :date
+                                        (synaxis-scrape--prefer-date
+                                         (plist-get result :date)
+                                         (plist-get entry :date))))))
            (when (buffer-live-p buf)
              (kill-buffer buf))
            (synaxis-scrape--tracker-tick tracker entry done-callback))))

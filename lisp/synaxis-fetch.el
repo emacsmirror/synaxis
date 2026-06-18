@@ -297,11 +297,16 @@ crashing when synaxis does not warm `url-cache-directory'."
           (puthash url t synaxis-fetch--in-flight)
           (url-queue-retrieve url #'synaxis-fetch--callback (list url) t t)))))))
 
-(defun synaxis-fetch--callback (_status url)
-  "Callback for `url-queue-retrieve' bound to URL."
+(defun synaxis-fetch--callback (status url)
+  "Callback for `url-queue-retrieve' bound to URL.
+STATUS is the `url-retrieve' status plist; a non-nil `:error' entry
+means the request failed at the transport level, so bump the feed's
+failure counter instead of parsing a junk buffer."
   (let ((buf (current-buffer)))
     (unwind-protect
-        (synaxis-fetch--process-response buf url)
+        (if (plist-get status :error)
+            (synaxis-fetch--record-failure url)
+          (synaxis-fetch--process-response buf url))
       (synaxis-fetch--finish-url url)
       (when (buffer-live-p buf)
         (kill-buffer buf)))))

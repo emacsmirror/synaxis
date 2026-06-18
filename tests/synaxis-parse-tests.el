@@ -71,6 +71,25 @@
          (e (car (plist-get feed :entries))))
     (should (string-match-p "Hi there" (or (plist-get e :content) "")))))
 
+(ert-deftest synaxis-parse-test-atom-uses-direct-children-not-nested ()
+  "Entry fields come from direct children, not same-named tags nested
+in xhtml content.  Here `content' precedes `title' and embeds a
+`<title>' element; with the old recursive `dom-by-tag' the entry
+title would resolve to the nested \"NESTED\" node."
+  (let* ((xml "<?xml version=\"1.0\"?>
+<feed xmlns=\"http://www.w3.org/2005/Atom\">
+  <title>Feed</title>
+  <entry>
+    <content type=\"xhtml\"><div xmlns=\"http://www.w3.org/1999/xhtml\"><title>NESTED</title>body</div></content>
+    <title>Real Title</title>
+    <id>urn:x:1</id>
+    <updated>2024-01-01T00:00:00Z</updated>
+  </entry>
+</feed>")
+         (e (car (plist-get (synaxis-parse-string xml) :entries))))
+    (should (equal "Real Title" (plist-get e :title)))
+    (should (equal "urn:x:1" (plist-get e :source-id)))))
+
 (ert-deftest synaxis-parse-test-atom-no-id-synthesises-source-id ()
   (let* ((raw (synaxis-tests--load-fixture "atom-no-id.xml"))
          (e1 (car (plist-get (synaxis-parse-string raw) :entries)))

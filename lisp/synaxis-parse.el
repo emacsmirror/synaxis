@@ -135,7 +135,7 @@ Returns a plist with `:content' and `:content-type'."
   (let ((type (or (dom-attr node 'type) "text")))
     (pcase type
       ("xhtml"
-       (let ((div (car (dom-by-tag node 'div))))
+       (let ((div (dom-child-by-tag node 'div)))
          (list :content (synaxis-parse--dom-children-as-html div)
                :content-type "html")))
       ("text"
@@ -210,15 +210,15 @@ lacks both `:source-id' and `:link'."
   "Convert Atom entry ITEM (DOM node) to an entry plist.
 BASE is the absolute base URL against which a relative entry link
 is resolved (nil leaves the raw href in place)."
-  (let* ((title (synaxis-parse--text-node (car (dom-by-tag item 'title))))
-         (id (synaxis-parse--text-node (car (dom-by-tag item 'id))))
+  (let* ((title (synaxis-parse--text-node (dom-child-by-tag item 'title)))
+         (id (synaxis-parse--text-node (dom-child-by-tag item 'id)))
          (raw (synaxis-parse--atom-link item))
          (link (or (synaxis-parse--resolve-url base raw) raw))
          (date (synaxis-parse--decode-date
-                (or (synaxis-parse--text-node (car (dom-by-tag item 'updated)))
-                    (synaxis-parse--text-node (car (dom-by-tag item 'published))))))
-         (cnode (or (car (dom-by-tag item 'content))
-                    (car (dom-by-tag item 'summary))))
+                (or (synaxis-parse--text-node (dom-child-by-tag item 'updated))
+                    (synaxis-parse--text-node (dom-child-by-tag item 'published)))))
+         (cnode (or (dom-child-by-tag item 'content)
+                    (dom-child-by-tag item 'summary)))
          (cplist (and cnode (synaxis-parse--atom-text-container cnode))))
     (append (list :title (or title "")
                   :source-id id
@@ -243,7 +243,7 @@ resolved against it.  A feed-level or entry-level `xml:base'
 attribute, if present, layers on top per RFC 4287 section 4."
   (let ((feed-base (synaxis-parse--xml-base dom feed-url)))
     (list :type 'atom
-          :title (synaxis-parse--text-node (car (dom-by-tag dom 'title)))
+          :title (synaxis-parse--text-node (dom-child-by-tag dom 'title))
           :entries (synaxis-parse--ensure-source-ids
                     (cl-loop for entry in (dom-by-tag dom 'entry)
                              for base = (synaxis-parse--xml-base entry feed-base)
@@ -256,14 +256,14 @@ attribute, if present, layers on top per RFC 4287 section 4."
   "Convert RSS 2.0 ITEM (DOM node) to an entry plist.
 BASE is the absolute base URL against which a relative link is
 resolved (nil leaves the raw link in place)."
-  (let* ((title (synaxis-parse--text-node (car (dom-by-tag item 'title))))
-         (raw (synaxis-parse--text-node (car (dom-by-tag item 'link))))
+  (let* ((title (synaxis-parse--text-node (dom-child-by-tag item 'title)))
+         (raw (synaxis-parse--text-node (dom-child-by-tag item 'link)))
          (link (or (synaxis-parse--resolve-url base raw) raw))
-         (guid (synaxis-parse--text-node (car (dom-by-tag item 'guid))))
+         (guid (synaxis-parse--text-node (dom-child-by-tag item 'guid)))
          (date (synaxis-parse--decode-date
-                (synaxis-parse--text-node (car (dom-by-tag item 'pubDate)))))
-         (encoded (car (dom-by-tag item 'encoded)))
-         (desc (car (dom-by-tag item 'description)))
+                (synaxis-parse--text-node (dom-child-by-tag item 'pubDate))))
+         (encoded (dom-child-by-tag item 'encoded))
+         (desc (dom-child-by-tag item 'description))
          (cnode (or encoded desc))
          (content (and cnode (synaxis-parse--text-node cnode))))
     (list :title (or title "")
@@ -276,10 +276,10 @@ resolved (nil leaves the raw link in place)."
 (defun synaxis-parse--from-rss (dom &optional feed-url)
   "Parse DOM as an RSS 2.0 feed.
 FEED-URL resolves protocol- or page-relative item links."
-  (let* ((channel (car (dom-by-tag dom 'channel)))
+  (let* ((channel (dom-child-by-tag dom 'channel))
          (title (and channel
                      (synaxis-parse--text-node
-                      (car (dom-by-tag channel 'title))))))
+                      (dom-child-by-tag channel 'title)))))
     (list :type 'rss
           :title title
           :entries (synaxis-parse--ensure-source-ids
@@ -293,14 +293,14 @@ FEED-URL resolves protocol- or page-relative item links."
   "Convert RSS 1.0 ITEM (DOM node) to an entry plist.
 BASE is the absolute base URL against which a relative link is
 resolved (nil leaves the raw link in place)."
-  (let* ((title (synaxis-parse--text-node (car (dom-by-tag item 'title))))
-         (raw (synaxis-parse--text-node (car (dom-by-tag item 'link))))
+  (let* ((title (synaxis-parse--text-node (dom-child-by-tag item 'title)))
+         (raw (synaxis-parse--text-node (dom-child-by-tag item 'link)))
          (link (or (synaxis-parse--resolve-url base raw) raw))
          (about (dom-attr item 'rdf:about))
          (date (synaxis-parse--decode-date
-                (or (synaxis-parse--text-node (car (dom-by-tag item 'date)))
-                    (synaxis-parse--text-node (car (dom-by-tag item 'pubDate))))))
-         (desc (synaxis-parse--text-node (car (dom-by-tag item 'description)))))
+                (or (synaxis-parse--text-node (dom-child-by-tag item 'date))
+                    (synaxis-parse--text-node (dom-child-by-tag item 'pubDate)))))
+         (desc (synaxis-parse--text-node (dom-child-by-tag item 'description))))
     (list :title (or title "")
           :source-id (or about link)
           :link link
@@ -311,10 +311,10 @@ resolved (nil leaves the raw link in place)."
 (defun synaxis-parse--from-rss1 (dom &optional feed-url)
   "Parse DOM as an RSS 1.0 / RDF feed.
 FEED-URL resolves protocol- or page-relative item links."
-  (let* ((channel (car (dom-by-tag dom 'channel)))
+  (let* ((channel (dom-child-by-tag dom 'channel))
          (title (and channel
                      (synaxis-parse--text-node
-                      (car (dom-by-tag channel 'title))))))
+                      (dom-child-by-tag channel 'title)))))
     (list :type 'rss1
           :title title
           :entries (synaxis-parse--ensure-source-ids
