@@ -240,7 +240,7 @@ date-only inputs do not shift a day under a non-UTC local zone."
 
 (defun synaxis-scrape--children-text (node)
   "Concatenate all descendant text of NODE, trimmed.  Empty when NODE is nil."
-  (if node (string-trim (dom-texts node "")) ""))
+  (if node (string-trim (synaxis-parse--text-of node)) ""))
 
 (defun synaxis-scrape--node-date (node)
   "Return ISO date string from NODE's `datetime' attribute or text content."
