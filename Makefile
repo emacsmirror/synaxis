@@ -1,6 +1,7 @@
 .PHONY: all compile do-compile native-comp do-native-comp test do-test \
         do-test-summary test-oneshot do-test-oneshot lint do-lint \
-        lint-checkdoc lint-package-lint lint-relint autoloads load clean
+        lint-checkdoc lint-package-lint lint-relint dev do-dev \
+        autoloads load clean
 
 NIX := $(shell command -v nix 2>/dev/null)
 
@@ -145,6 +146,15 @@ lint-package-lint:
 
 lint-relint:
 	$(BATCH) --eval "(require 'relint)" -f relint-batch lisp
+
+# Fast pre-commit pass: byte-compile, native-comp (catches missing
+# `require's), checkdoc, and the test suite -- all in one Nix-shell
+# entry.  The heavier release gates (package-lint, relint) stay in
+# `lint'.
+dev:
+	@$(ENV_MAKE) do-dev
+
+do-dev: do-compile do-native-comp lint-checkdoc do-test
 
 autoloads:
 	$(EMACS_CMD) $(EMACS_OPTS) \
