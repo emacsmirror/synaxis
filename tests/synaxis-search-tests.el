@@ -7,6 +7,7 @@
 ;;; Code:
 
 (require 'ert)
+(require 'bookmark)
 
 (load (expand-file-name "../lisp/synaxis-search.el"
                         (file-name-directory (or load-file-name buffer-file-name))))
@@ -529,6 +530,29 @@ and point should land at the start of the buffer."
        (should (member "foo" (synaxis-db-get-tags id1)))
        (should (member "foo" (synaxis-db-get-tags id2)))
        (should-not synaxis-search--marked)))))
+
+(ert-deftest synaxis-search-test-bookmark-record-stores-filter ()
+  "The bookmark record carries the current filter as `location'."
+  (synaxis-tests--with-tmp
+   (synaxis-tests--seed-entry "https://example.com/x" "1" "T" 1.0 t)
+   (let ((synaxis-search-default-filter "")) (synaxis-search))
+   (with-current-buffer "*synaxis*"
+     (synaxis-search-set-filter "tag:unread foo")
+     (let ((record (synaxis-search--bookmark-make-record)))
+       (should (equal "tag:unread foo"
+                      (bookmark-prop-get record 'location)))
+       (should (eq #'synaxis-search-bookmark-handler
+                   (bookmark-prop-get record 'handler)))))))
+
+(ert-deftest synaxis-search-test-bookmark-handler-applies-filter ()
+  "Jumping to a bookmark opens the buffer and applies the stored filter."
+  (synaxis-tests--with-tmp
+   (synaxis-tests--seed-entry "https://example.com/x" "1" "T" 1.0 t)
+   (let ((synaxis-search-default-filter "")) (synaxis-search))
+   (synaxis-search-bookmark-handler '("synaxis tag:unread"
+                                      (location . "tag:unread")))
+   (with-current-buffer "*synaxis*"
+     (should (equal "tag:unread" synaxis-search--filter)))))
 
 (provide 'synaxis-search-tests)
 ;;; synaxis-search-tests.el ends here
