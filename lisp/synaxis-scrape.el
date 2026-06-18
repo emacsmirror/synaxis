@@ -200,18 +200,22 @@ COMBINATOR is `descendant', `child', or nil for the last token."
 
 (defun synaxis-scrape--decode-html (buffer)
   "Return the decoded HTML body of BUFFER (response from `url-retrieve').
-Strips HTTP headers if present, decodes as UTF-8 fallback."
+Strips HTTP headers if present.  Coding is chosen from the response
+Content-Type charset, an XML/HTML declaration in the body, or
+UTF-8 (see `synaxis-parse--decode-bytes')."
   (with-current-buffer buffer
     (save-excursion
       (goto-char (point-min))
-      (let ((body-start
-             (if (re-search-forward "\r?\n\r?\n" nil t)
-                 (match-end 0)
-               (point-min))))
-        (let ((body (buffer-substring-no-properties body-start (point-max))))
-          (if (multibyte-string-p body)
-              body
-            (decode-coding-string body 'utf-8)))))))
+      (let* ((body-start
+              (if (re-search-forward "\r?\n\r?\n" nil t)
+                  (match-end 0)
+                (point-min)))
+             (headers (buffer-substring-no-properties (point-min) body-start))
+             (content-type
+              (and (string-match "[Cc]ontent-[Tt]ype:[ \t]*\\([^\r\n]*\\)" headers)
+                   (match-string 1 headers)))
+             (body (buffer-substring-no-properties body-start (point-max))))
+        (synaxis-parse--decode-bytes body content-type)))))
 
 ;;; Date extraction
 

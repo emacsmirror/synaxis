@@ -187,5 +187,38 @@ title would resolve to the nested \"NESTED\" node."
     (should (stringp (plist-get e :date)))
     (should (string-match-p "JSON content" (or (plist-get e :content) "")))))
 
+;;; Group: charset decoding
+
+(ert-deftest synaxis-parse-test-charset->coding ()
+  (should (eq 'utf-8 (synaxis-parse--charset->coding "UTF-8")))
+  (should (eq 'iso-8859-7 (synaxis-parse--charset->coding "ISO-8859-7")))
+  (should (eq 'iso-8859-1 (synaxis-parse--charset->coding "latin1")))
+  (should-not (synaxis-parse--charset->coding "no-such-charset-xyz")))
+
+(ert-deftest synaxis-parse-test-decode-bytes-content-type-wins ()
+  "An explicit Content-Type charset is honoured."
+  (let* ((s "Εστία")
+         (bytes (encode-coding-string s 'iso-8859-7)))
+    (should (equal s (synaxis-parse--decode-bytes
+                      bytes "text/xml; charset=ISO-8859-7")))))
+
+(ert-deftest synaxis-parse-test-decode-bytes-xml-declaration ()
+  "Without a Content-Type, the XML encoding declaration is used."
+  (let* ((doc "<?xml version=\"1.0\" encoding=\"ISO-8859-7\"?>\n<x>Εστία</x>")
+         (bytes (encode-coding-string doc 'iso-8859-7)))
+    (should (string-match-p "Εστία" (synaxis-parse--decode-bytes bytes nil)))))
+
+(ert-deftest synaxis-parse-test-decode-bytes-html-meta ()
+  "Without a Content-Type, an HTML <meta charset> is used."
+  (let* ((doc "<html><head><meta charset=\"iso-8859-7\"></head><body>Εστία</body></html>")
+         (bytes (encode-coding-string doc 'iso-8859-7)))
+    (should (string-match-p "Εστία" (synaxis-parse--decode-bytes bytes nil)))))
+
+(ert-deftest synaxis-parse-test-decode-bytes-utf-8-fallback ()
+  "With no charset hint at all, UTF-8 is assumed."
+  (let* ((s "café ☕")
+         (bytes (encode-coding-string s 'utf-8)))
+    (should (equal s (synaxis-parse--decode-bytes bytes nil)))))
+
 (provide 'synaxis-parse-tests)
 ;;; synaxis-parse-tests.el ends here

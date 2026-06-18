@@ -226,10 +226,11 @@ Updates the DB, runs hooks, and tracks cache headers and failures."
      url (list :last-fetched (float-time)
                :failures failures))))
 
-(defun synaxis-fetch--body-as-string (body)
-  "Return BODY as a multibyte string, decoding unibyte as UTF-8."
-  (if (multibyte-string-p body) body
-    (decode-coding-string body 'utf-8)))
+(defun synaxis-fetch--body-as-string (body &optional content-type)
+  "Return BODY as a multibyte string.
+Coding is chosen from CONTENT-TYPE's charset, a declaration in
+BODY, or UTF-8 (see `synaxis-parse--decode-bytes')."
+  (synaxis-parse--decode-bytes body content-type))
 
 (defun synaxis-fetch--ingest (url body headers)
   "Parse BODY as a feed for URL and upsert entries.
@@ -238,7 +239,8 @@ Tags listed in the feed's `meta.autotags' are applied to each
 fresh insert in addition to `unread'."
   (condition-case _err
       (let* ((parsed (synaxis-parse-string
-                      (synaxis-fetch--body-as-string body)
+                      (synaxis-fetch--body-as-string
+                       body (cdr (assoc "content-type" headers)))
                       url))
              (feed (synaxis-db-get-feed url))
              (autotags (append (plist-get (plist-get feed :meta) :autotags)

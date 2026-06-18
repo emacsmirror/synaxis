@@ -83,6 +83,49 @@ failure, so callers never need to handle a nil date."
       (synaxis-parse--decode-rfc822 s)
       (synaxis-parse--time-to-iso (current-time))))
 
+;;; Charset decoding
+
+(defconst synaxis-parse--charset-aliases
+  '(("latin1" . iso-8859-1) ("latin-1" . iso-8859-1) ("utf8" . utf-8))
+  "Charset names that do not intern directly to a coding system.")
+
+(defun synaxis-parse--charset->coding (name)
+  "Return a coding-system symbol for charset NAME, or nil if unknown."
+  (and (stringp name)
+       (let* ((key (downcase (string-trim name)))
+              (sym (or (cdr (assoc key synaxis-parse--charset-aliases))
+                       (intern key))))
+         (and (coding-system-p sym) sym))))
+
+(defun synaxis-parse--content-type-charset (content-type)
+  "Return the charset named in the CONTENT-TYPE header value, or nil."
+  (and (stringp content-type)
+       (string-match "charset=[ \t]*\"?\\([^\";[:space:]]+\\)" content-type)
+       (match-string 1 content-type)))
+
+(defun synaxis-parse--sniff-coding (bytes)
+  "Return a coding system declared in BYTES, or nil.
+Looks for an XML `encoding' pseudo-attribute or an HTML `<meta
+charset>' near the start of the raw response BYTES."
+  (let ((head (substring bytes 0 (min 1024 (length bytes)))))
+    (or (and (string-match "<\\?xml[^>]*encoding=[\"']\\([^\"']+\\)[\"']" head)
+             (synaxis-parse--charset->coding (match-string 1 head)))
+        (and (string-match "<meta[^>]*charset=[\"']?\\([^\"'>[:space:]]+\\)" head)
+             (synaxis-parse--charset->coding (match-string 1 head))))))
+
+(defun synaxis-parse--decode-bytes (bytes &optional content-type)
+  "Decode raw response BYTES to a multibyte string.
+Coding is taken from CONTENT-TYPE's charset, else a declaration
+sniffed from BYTES (XML/HTML), else UTF-8.  A multibyte BYTES is
+returned unchanged, since it has already been decoded upstream."
+  (if (multibyte-string-p bytes) bytes
+    (decode-coding-string
+     bytes
+     (or (synaxis-parse--charset->coding
+          (synaxis-parse--content-type-charset content-type))
+         (synaxis-parse--sniff-coding bytes)
+         'utf-8))))
+
 ;;; URL resolution
 
 (defun synaxis-parse--resolve-url (base path)
