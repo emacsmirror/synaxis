@@ -500,7 +500,7 @@ Completes against the entry's current tags only."
         (forward-line 1)))))
 
 (defun synaxis-search--after-bulk (ids)
-  "Redraw rows for IDS and clear all marks."
+  "Redraw rows for IDS and clear every mark."
   (dolist (id ids)
     (synaxis-search--redraw-current id))
   (setq synaxis-search--marked nil)
@@ -518,7 +518,7 @@ Completes against the entry's current tags only."
     (forward-line 1)))
 
 (defun synaxis-search-unmark-all ()
-  "Clear all marks in the list buffer."
+  "Clear every mark in the list buffer."
   (interactive)
   (setq synaxis-search--marked nil)
   (synaxis-search--clear-mark-overlays)
