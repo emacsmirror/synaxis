@@ -471,7 +471,7 @@ With point on no row, falls back to `synaxis-edit-feed's prompt."
          (url (and entry (plist-get entry :feed-url))))
     (if url
         (synaxis-edit-feed url)
-      (call-interactively 'synaxis-edit-feed))))
+      (call-interactively #'synaxis-edit-feed))))
 
 (defun synaxis-search-update ()
   "Kick off `synaxis-fetch-all'.  Press `g' to refresh once it finishes."

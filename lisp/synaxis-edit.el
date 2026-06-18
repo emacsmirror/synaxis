@@ -262,7 +262,7 @@ underlying stored value is untouched."
 
 ;;;###autoload
 (defun synaxis-edit-feed (&optional url)
-  "Open the keymap-popup editor on a feed URL.
+  "Open the feed editor on a feed URL.
 With no URL, prompts via `completing-read'."
   (interactive (list (synaxis-edit--read-feed-url)))
   (setq synaxis-edit--current-url url)

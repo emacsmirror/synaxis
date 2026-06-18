@@ -604,8 +604,7 @@ the source instead of the DB."
     (require 'synaxis-show)
     (synaxis-show-entry-plist entry)))
 
-(define-key synaxis-scrape-test-mode-map (kbd "RET")
-  #'synaxis-scrape-test-show)
+(keymap-set synaxis-scrape-test-mode-map "RET" #'synaxis-scrape-test-show)
 
 (defun synaxis-scrape--render-test-buffer (url entries)
   "Pop the scrape-test buffer with ENTRIES extracted from URL."
