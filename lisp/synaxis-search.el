@@ -111,6 +111,12 @@ override this default."
   :group 'synaxis
   :package-version '(synaxis . "0.1"))
 
+(defface synaxis-search-marked-face
+  '((t :inherit region))
+  "Face for marked rows in the list buffer."
+  :group 'synaxis
+  :package-version '(synaxis . "0.1"))
+
 ;;; Buffer-local state
 
 (defvar-local synaxis-search--filter nil
@@ -120,6 +126,10 @@ override this default."
   "Hash mapping tag string to face symbol.
 Rebuilt on each `synaxis-search-refresh' from the `tags' registry.
 Tag-face changes made while the buffer is open take effect on `g'.")
+
+(defvar-local synaxis-search--marked nil
+  "List of marked entry ids, most-recently-marked first.
+Bulk commands act on these when non-nil; cleared on refresh.")
 
 (defun synaxis-search--rebuild-tag-face-cache ()
   "Populate the buffer-local tag-face cache from the registry."
@@ -223,6 +233,9 @@ at call time, so the format reflects the current window size."
   "R" ("Mark all read" synaxis-search-mark-all-read)
   "t" ("Edit tags" synaxis-search-edit-tags :stay-open t)
   ";" ("Apply tag rules" synaxis-tag-rules-apply-all)
+  :group "Mark"
+  "m" ("Mark / unmark" synaxis-search-toggle-mark :stay-open t)
+  "U" ("Unmark all" synaxis-search-unmark-all :stay-open t)
   :group "Feeds"
   "A" ("Add feed" synaxis-add-feed)
   "D" ("Remove feed" synaxis-remove-feed)
@@ -266,6 +279,7 @@ at call time, so the format reflects the current window size."
 When ENTRY-ID is non-nil, restore point to that row explicitly."
   (synaxis-search--rebuild-format)
   (synaxis-tl-print)
+  (synaxis-search--refresh-mark-overlays)
   (when entry-id
     (synaxis-search--restore-entry entry-id)))
 
@@ -276,6 +290,7 @@ window resizes are picked up automatically, and rebuilds the
 tag-face cache from the registry."
   (interactive)
   (when (derived-mode-p 'synaxis-search-mode)
+    (setq synaxis-search--marked nil)
     (synaxis-search--rebuild-format)
     (synaxis-search--rebuild-tag-face-cache)
     (let* ((spec (synaxis-search--compile-filter
@@ -368,13 +383,18 @@ DB-backed in `synaxis-search-mode'; buffer-local store in
       (message "synaxis: marked %d entries as read" n))))
 
 (defun synaxis-search-toggle-read ()
-  "Toggle the `unread' tag on the entry at point."
+  "Toggle the `unread' tag on the entry at point.
+When entries are marked, mark all of them read instead."
   (interactive)
-  (when-let* ((id (synaxis-search-current-entry)))
-    (if (member "unread" (synaxis-db-get-tags id))
-        (synaxis-db-remove-tag id "unread")
-      (synaxis-db-add-tag id "unread"))
-    (synaxis-search--redraw-current)))
+  (if synaxis-search--marked
+      (let ((ids (synaxis-search--target-ids)))
+        (synaxis-db-bulk-remove-tag ids "unread")
+        (synaxis-search--after-bulk ids))
+    (when-let* ((id (synaxis-search-current-entry)))
+      (if (member "unread" (synaxis-db-get-tags id))
+          (synaxis-db-remove-tag id "unread")
+        (synaxis-db-add-tag id "unread"))
+      (synaxis-search--redraw-current))))
 
 (defun synaxis-search--tag-candidates (entry-id)
   "Return `+absent' / `-present' candidate strings for ENTRY-ID.
@@ -403,18 +423,21 @@ Each SELECTION is `+NAME' (add), `-NAME' (remove), or a bare NAME
 
 (defun synaxis-search-edit-tags ()
   "Add or remove tags on the entry at point via `completing-read-multiple'.
+When entries are marked, the chosen edits apply to all of them.
 Candidates are prefixed `+' (absent) or `-' (already on the entry);
 new tag names may also be typed.  Separator is `,'."
   (interactive)
-  (when-let* ((id (synaxis-search-current-entry)))
-    (let* ((cands (synaxis-search--tag-candidates id))
-           (crm-separator ",")
-           (selections (mapcar #'string-trim
-                               (completing-read-multiple
-                                "Tags (+add, -remove): " cands nil nil))))
-      (when selections
-        (synaxis-search--apply-tag-edits id selections)
-        (synaxis-search--redraw-current)))))
+  (let ((ids (synaxis-search--target-ids)))
+    (when ids
+      (let* ((cands (synaxis-search--tag-candidates (car ids)))
+             (crm-separator ",")
+             (selections (mapcar #'string-trim
+                                 (completing-read-multiple
+                                  "Tags (+add, -remove): " cands nil nil))))
+        (when selections
+          (dolist (id ids)
+            (synaxis-search--apply-tag-edits id selections))
+          (synaxis-search--after-bulk ids))))))
 
 (defun synaxis-search-tag-entry (tag)
   "Add TAG to the entry at point.
@@ -438,6 +461,62 @@ Completes against the entry's current tags only."
               ((not (string-empty-p tag))))
     (synaxis-db-remove-tag id tag)
     (synaxis-search--redraw-current)))
+
+;;; Marking
+
+(defun synaxis-search--marked-p (id)
+  "Non-nil when entry ID is marked."
+  (and (member id synaxis-search--marked) t))
+
+(defun synaxis-search--target-ids ()
+  "Return the marked ids (oldest first), or the id at point as a list."
+  (or (reverse synaxis-search--marked)
+      (and-let* ((id (synaxis-search-current-entry)))
+        (list id))))
+
+(defun synaxis-search--clear-mark-overlays ()
+  "Remove all mark overlays from the buffer."
+  (remove-overlays (point-min) (point-max) 'synaxis-mark t))
+
+(defun synaxis-search--refresh-mark-overlays ()
+  "Recreate row overlays for every visible marked entry."
+  (synaxis-search--clear-mark-overlays)
+  (when synaxis-search--marked
+    (save-excursion
+      (goto-char (point-min))
+      (while (not (eobp))
+        (when (synaxis-search--marked-p (tabulated-list-get-id))
+          (let ((ov (make-overlay (line-beginning-position)
+                                  (line-beginning-position 2))))
+            (overlay-put ov 'synaxis-mark t)
+            (overlay-put ov 'face 'synaxis-search-marked-face)
+            (overlay-put ov 'evaporate t)))
+        (forward-line 1)))))
+
+(defun synaxis-search--after-bulk (ids)
+  "Redraw rows for IDS and clear all marks."
+  (dolist (id ids)
+    (synaxis-search--redraw-current id))
+  (setq synaxis-search--marked nil)
+  (synaxis-search--clear-mark-overlays))
+
+(defun synaxis-search-toggle-mark ()
+  "Toggle the mark on the entry at point, then move to the next line."
+  (interactive)
+  (when-let* ((id (synaxis-search-current-entry)))
+    (setq synaxis-search--marked
+          (if (synaxis-search--marked-p id)
+              (delete id synaxis-search--marked)
+            (cons id synaxis-search--marked)))
+    (synaxis-search--refresh-mark-overlays)
+    (forward-line 1)))
+
+(defun synaxis-search-unmark-all ()
+  "Clear all marks in the list buffer."
+  (interactive)
+  (setq synaxis-search--marked nil)
+  (synaxis-search--clear-mark-overlays)
+  (message "synaxis: marks cleared"))
 
 
 (defun synaxis-search--read-filter (default)

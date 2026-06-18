@@ -478,5 +478,57 @@ and point should land at the start of the buffer."
        (should-not (equal id-a (tabulated-list-get-id)))
        (should (= (point) (point-min)))))))
 
+;;; Group: marking
+
+(ert-deftest synaxis-search-test-toggle-mark-toggles ()
+  (synaxis-tests--with-tmp
+   (let ((id (synaxis-tests--seed-entry "https://e/a" "1" "T" 1.0 t)))
+     (let ((synaxis-search-default-filter "")) (synaxis-search))
+     (with-current-buffer "*synaxis*"
+       (goto-char (point-min))
+       (synaxis-search-toggle-mark)
+       (should (member id synaxis-search--marked))
+       (goto-char (point-min))
+       (synaxis-search-toggle-mark)
+       (should-not (member id synaxis-search--marked))))))
+
+(ert-deftest synaxis-search-test-target-ids-marked-or-point ()
+  (synaxis-tests--with-tmp
+   (let ((id (synaxis-tests--seed-entry "https://e/a" "1" "T" 1.0 t)))
+     (let ((synaxis-search-default-filter "")) (synaxis-search))
+     (with-current-buffer "*synaxis*"
+       (goto-char (point-min))
+       (should (equal (list id) (synaxis-search--target-ids)))
+       (setq synaxis-search--marked (list id))
+       (should (equal (list id) (synaxis-search--target-ids)))))))
+
+(ert-deftest synaxis-search-test-toggle-read-bulk-on-marks ()
+  "With marks, `synaxis-search-toggle-read' marks all of them read."
+  (synaxis-tests--with-tmp
+   (let ((id1 (synaxis-tests--seed-entry "https://e/a" "1" "A" 2.0 t))
+         (id2 (synaxis-tests--seed-entry "https://e/a" "2" "B" 1.0 t)))
+     (let ((synaxis-search-default-filter "")) (synaxis-search))
+     (with-current-buffer "*synaxis*"
+       (setq synaxis-search--marked (list id1 id2))
+       (synaxis-search-toggle-read)
+       (should-not (member "unread" (synaxis-db-get-tags id1)))
+       (should-not (member "unread" (synaxis-db-get-tags id2)))
+       (should-not synaxis-search--marked)))))
+
+(ert-deftest synaxis-search-test-edit-tags-bulk-on-marks ()
+  "With marks, tag edits apply to every marked entry, then marks clear."
+  (synaxis-tests--with-tmp
+   (let ((id1 (synaxis-tests--seed-entry "https://e/a" "1" "A" 2.0 t))
+         (id2 (synaxis-tests--seed-entry "https://e/a" "2" "B" 1.0 t)))
+     (let ((synaxis-search-default-filter "")) (synaxis-search))
+     (with-current-buffer "*synaxis*"
+       (setq synaxis-search--marked (list id1 id2))
+       (cl-letf (((symbol-function 'completing-read-multiple)
+                  (lambda (&rest _) (list "+foo"))))
+         (synaxis-search-edit-tags))
+       (should (member "foo" (synaxis-db-get-tags id1)))
+       (should (member "foo" (synaxis-db-get-tags id2)))
+       (should-not synaxis-search--marked)))))
+
 (provide 'synaxis-search-tests)
 ;;; synaxis-search-tests.el ends here
