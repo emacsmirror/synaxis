@@ -45,7 +45,11 @@
 (declare-function synaxis-remove-feed "synaxis" (url))
 (declare-function synaxis-edit-feed "synaxis-edit" (&optional url))
 (declare-function synaxis-tag-rules-apply-all "synaxis" ())
+(declare-function bookmark-prop-get "bookmark" (bookmark prop))
+(declare-function bookmark-make-record-default
+                  "bookmark" (&optional no-file no-context posn))
 
+(defvar bookmark-make-record-function)
 (defvar crm-separator)
 (defvar synaxis-scrape-test--entries)
 
@@ -253,6 +257,8 @@ at call time, so the format reflects the current window size."
   (setq tabulated-list-sort-key nil)
   (setq-local truncate-lines t)
   (setq-local revert-buffer-function (lambda (&rest _) (synaxis-search-refresh)))
+  (setq-local bookmark-make-record-function
+              #'synaxis-search--bookmark-make-record)
   (tabulated-list-init-header))
 
 ;;; Commands
@@ -539,6 +545,27 @@ completion against `synaxis-filter-completions'."
    (list (synaxis-search--read-filter (or synaxis-search--filter ""))))
   (setq synaxis-search--filter filter)
   (synaxis-search-refresh))
+
+;;; Bookmarks
+
+(defun synaxis-search--bookmark-make-record ()
+  "Return a bookmark record for the current synaxis filter.
+The filter string is stored as the record's `location'.  The list
+buffer has no file and no meaningful point context, so neither is
+recorded."
+  `(,(format "synaxis %s" (or synaxis-search--filter ""))
+    ,@(bookmark-make-record-default 'no-file 'no-context)
+    (location . ,(or synaxis-search--filter ""))
+    (handler . ,#'synaxis-search-bookmark-handler)))
+
+;;;###autoload
+(defun synaxis-search-bookmark-handler (record)
+  "Jump to a synaxis search bookmark RECORD.
+Opens the list buffer and applies the stored filter."
+  (synaxis-search)
+  (synaxis-search-set-filter (bookmark-prop-get record 'location)))
+
+(put 'synaxis-search-bookmark-handler 'bookmark-handler-type "Synaxis")
 
 (defun synaxis-search-edit-feed ()
   "Open `synaxis-edit-feed' on the feed of the entry at point.
