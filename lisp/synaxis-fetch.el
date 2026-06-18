@@ -53,6 +53,16 @@ Bound around the `url-queue-retrieve' call as
   :group 'synaxis
   :package-version '(synaxis . "0.1"))
 
+(defcustom synaxis-fetch-backoff-base 3600
+  "Base seconds for exponential backoff of failing feeds.
+A feed with N consecutive failures is skipped by the background
+auto-update until BASE * 2^(N-1) seconds (capped at BASE * 64)
+past its last fetch.  Interactive `synaxis-update' ignores backoff
+and always retries.  Set to 0 to disable backoff."
+  :type 'natnum
+  :group 'synaxis
+  :package-version '(synaxis . "0.1"))
+
 (defcustom synaxis-http-request-headers
   '(("Accept-Language" . "en-US,en;q=0.9")
     ("Accept" . "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
@@ -313,10 +323,24 @@ failure counter instead of parsing a junk buffer."
       (when (buffer-live-p buf)
         (kill-buffer buf)))))
 
-(defun synaxis-fetch-all ()
-  "Kick off `synaxis-fetch-feed' for every known feed."
+(defun synaxis-fetch--due-p (feed)
+  "Non-nil when FEED is due for a background fetch.
+A feed with consecutive failures is held off with exponential
+backoff from its last fetch (see `synaxis-fetch-backoff-base')."
+  (let ((failures (or (plist-get feed :failures) 0))
+        (last (or (plist-get feed :last-fetched) 0)))
+    (or (zerop failures)
+        (> (float-time)
+           (+ last (* synaxis-fetch-backoff-base
+                      (expt 2 (min (1- failures) 6))))))))
+
+(defun synaxis-fetch-all (&optional respect-backoff)
+  "Kick off `synaxis-fetch-feed' for every known feed.
+With RESPECT-BACKOFF non-nil, skip feeds currently in failure
+backoff (see `synaxis-fetch--due-p')."
   (dolist (feed (synaxis-db-list-feeds))
-    (synaxis-fetch-feed (plist-get feed :url))))
+    (when (or (not respect-backoff) (synaxis-fetch--due-p feed))
+      (synaxis-fetch-feed (plist-get feed :url)))))
 
 (provide 'synaxis-fetch)
 ;;; synaxis-fetch.el ends here

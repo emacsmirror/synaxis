@@ -79,9 +79,11 @@ runs."
     (setq synaxis--update-timer nil)))
 
 (defun synaxis--update-background ()
-  "Fetch all feeds.  No-op when no feeds are registered."
+  "Fetch all due feeds.  No-op when no feeds are registered.
+Honours failure backoff so chronically-failing feeds are not
+re-fetched every cycle (see `synaxis-fetch--due-p')."
   (when (synaxis-db-list-feeds)
-    (synaxis-fetch-all)))
+    (synaxis-fetch-all t)))
 
 (defun synaxis--update-maybe-start-timer ()
   "Schedule the autoupdate timer if configured.

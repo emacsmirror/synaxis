@@ -61,7 +61,7 @@
   (synaxis-tests--with-tmp
    (let ((calls 0))
      (cl-letf (((symbol-function 'synaxis-fetch-all)
-                (lambda () (cl-incf calls))))
+                (lambda (&optional _) (cl-incf calls))))
        (synaxis--update-background)
        (should (= 0 calls))))))
 
@@ -70,7 +70,7 @@
    (synaxis-db-add-feed "https://example.com/x")
    (let ((calls 0))
      (cl-letf (((symbol-function 'synaxis-fetch-all)
-                (lambda () (cl-incf calls))))
+                (lambda (&optional _) (cl-incf calls))))
        (synaxis--update-background)
        (should (= 1 calls))))))
 

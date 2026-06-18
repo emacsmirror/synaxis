@@ -477,5 +477,43 @@
        (when (buffer-live-p buf)
          (kill-buffer buf))))))
 
+;;; Group: failure backoff
+
+(ert-deftest synaxis-fetch-test-due-p-no-failures ()
+  (should (synaxis-fetch--due-p '(:failures 0 :last-fetched 0)))
+  (should (synaxis-fetch--due-p '())))
+
+(ert-deftest synaxis-fetch-test-due-p-recent-failure-held ()
+  (let ((synaxis-fetch-backoff-base 3600))
+    (should-not (synaxis-fetch--due-p
+                 (list :failures 1 :last-fetched (float-time))))))
+
+(ert-deftest synaxis-fetch-test-due-p-old-failure-retried ()
+  (let ((synaxis-fetch-backoff-base 3600))
+    (should (synaxis-fetch--due-p
+             (list :failures 1 :last-fetched (- (float-time) 7200))))))
+
+(ert-deftest synaxis-fetch-test-all-respects-backoff ()
+  "`synaxis-fetch-all' with backoff skips a recently-failed feed."
+  (synaxis-tests--with-tmp
+   (synaxis-db-add-feed "https://ok.example/feed")
+   (synaxis-db-add-feed "https://bad.example/feed")
+   (synaxis-db-set-feed-cache-headers
+    "https://bad.example/feed"
+    (list :last-fetched (float-time) :failures 3))
+   (let ((fetched nil)
+         (synaxis-fetch-backoff-base 3600))
+     (cl-letf (((symbol-function 'synaxis-fetch-feed)
+                (lambda (url) (push url fetched))))
+       (synaxis-fetch-all t))
+     (should (member "https://ok.example/feed" fetched))
+     (should-not (member "https://bad.example/feed" fetched))
+     ;; Without backoff, the failing feed is fetched too.
+     (setq fetched nil)
+     (cl-letf (((symbol-function 'synaxis-fetch-feed)
+                (lambda (url) (push url fetched))))
+       (synaxis-fetch-all))
+     (should (member "https://bad.example/feed" fetched)))))
+
 (provide 'synaxis-fetch-tests)
 ;;; synaxis-fetch-tests.el ends here
