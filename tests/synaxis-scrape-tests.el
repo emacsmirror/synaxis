@@ -393,7 +393,8 @@ Also: a second empty span with the same class is skipped."
           (let ((buf (get-buffer "*synaxis-scrape-test*")))
             (should buf)
             (with-current-buffer buf
-              (should (derived-mode-p 'synaxis-search-mode))
+              (should (derived-mode-p 'synaxis-scrape-test-mode))
+              (should-not (derived-mode-p 'synaxis-search-mode))
               ;; Same 5-column shape as the real list.
               (should (= 5 (length tabulated-list-format)))
               ;; Buffer-local store has the plist for each row.
@@ -431,6 +432,76 @@ Also: a second empty span with the same class is skipped."
                         (point-min) (point-max)))))))
       (dolist (b '("*synaxis-scrape-test*" "*synaxis-show*"))
         (when (get-buffer b) (kill-buffer b)))
+      (synaxis-db-close)
+      (delete-directory dir t))))
+
+(ert-deftest synaxis-scrape-test-db-commands-are-read-only ()
+  "Former search-buffer DB commands are shadowed in scrape previews."
+  (let* ((dir (make-temp-file "synaxis-scrape-keys" t))
+         (synaxis-db-file (expand-file-name "test.db" dir))
+         (synaxis-testing t)
+         (synaxis-db--connection nil)
+         (display-buffer-alist '((".*" display-buffer-no-window)))
+         (html (with-temp-buffer
+                 (insert-file-contents
+                  (expand-file-name "scrape-basic.html"
+                                    synaxis-tests--fixtures-dir))
+                 (buffer-string))))
+    (unwind-protect
+        (progn
+          (cl-letf (((symbol-function 'synaxis-scrape--fetch-html)
+                     (lambda (_url) html)))
+            (synaxis-scrape-test "https://example.com/blog/"
+                                 :url-selector "h2.entry-title a"))
+          (with-current-buffer "*synaxis-scrape-test*"
+            (goto-char (point-min))
+            (let ((entries (copy-tree synaxis-scrape-test--entries t))
+                  (rows (copy-tree tabulated-list-entries t)))
+              (dolist (key '("g" "l" "r" "R" "t" ";" "A" "D" "E" "u"))
+                (let ((command (key-binding (kbd key))))
+                  (should (eq command #'synaxis-scrape-test--read-only-command))
+                  (should-error (command-execute command) :type 'user-error)))
+              (should (equal entries synaxis-scrape-test--entries))
+              (should (equal rows tabulated-list-entries))))
+          (should (zerop (caar (sqlite-select (synaxis-db--ensure-open)
+                                              "SELECT COUNT(*) FROM entries;")))))
+      (when (get-buffer "*synaxis-scrape-test*")
+        (kill-buffer "*synaxis-scrape-test*"))
+      (synaxis-db-close)
+      (delete-directory dir t))))
+
+(ert-deftest synaxis-scrape-test-browse-and-copy-use-preview-store ()
+  "Browse/copy URL read the scrape preview row, not the database."
+  (let* ((dir (make-temp-file "synaxis-scrape-url" t))
+         (synaxis-db-file (expand-file-name "test.db" dir))
+         (synaxis-testing t)
+         (synaxis-db--connection nil)
+         (display-buffer-alist '((".*" display-buffer-no-window)))
+         (kill-ring nil)
+         browsed
+         (html (with-temp-buffer
+                 (insert-file-contents
+                  (expand-file-name "scrape-basic.html"
+                                    synaxis-tests--fixtures-dir))
+                 (buffer-string))))
+    (unwind-protect
+        (progn
+          (cl-letf (((symbol-function 'synaxis-scrape--fetch-html)
+                     (lambda (_url) html)))
+            (synaxis-scrape-test "https://example.com/blog/"
+                                 :url-selector "h2.entry-title a"))
+          (with-current-buffer "*synaxis-scrape-test*"
+            (goto-char (point-min))
+            (cl-letf (((symbol-function 'browse-url)
+                       (lambda (url &rest _args) (setq browsed url)))
+                      ((symbol-function 'synaxis-db-get-entry)
+                       (lambda (&rest _) (error "unexpected DB lookup"))))
+              (synaxis-search-copy-link)
+              (synaxis-search-browse-entry)))
+          (should (equal "https://example.com/post/1" (current-kill 0 t)))
+          (should (equal "https://example.com/post/1" browsed)))
+      (when (get-buffer "*synaxis-scrape-test*")
+        (kill-buffer "*synaxis-scrape-test*"))
       (synaxis-db-close)
       (delete-directory dir t))))
 

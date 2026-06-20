@@ -38,10 +38,13 @@
 
 (require 'cl-lib)
 (require 'dom)
+(require 'keymap-popup)
+(require 'tabulated-list)
 (require 'url-parse)
 (require 'parse-time)
 (require 'url-queue)
 (require 'synaxis-parse)
+(require 'synaxis-tl)
 
 (defvar synaxis-http-request-headers)
 
@@ -561,9 +564,10 @@ Routed to from `synaxis-fetch-feed' when the feed's type is `scrape'."
 
 ;;; Dry-run test command
 
-(declare-function synaxis-search-mode "synaxis-search" ())
 (declare-function synaxis-search--format "synaxis-search" ())
 (declare-function synaxis-search--entry-columns "synaxis-search" (entry))
+(declare-function synaxis-search-browse-entry "synaxis-search" ())
+(declare-function synaxis-search-copy-link "synaxis-search" ())
 (declare-function synaxis-show-entry-plist "synaxis-show" (entry))
 
 (defvar synaxis-scrape-test--buffer-name "*synaxis-scrape-test*"
@@ -599,19 +603,46 @@ and renders it via `synaxis-show-entry-plist'.  Inspect with
     (require 'synaxis-show)
     (synaxis-show-entry-plist entry)))
 
-(defvar-keymap synaxis-scrape-test-mode-map
-  :doc "Keymap for `synaxis-scrape-test-mode'."
-  "RET" #'synaxis-scrape-test-show)
+(defun synaxis-scrape-test--read-only-command ()
+  "Reject DB-backed commands in scrape preview buffers."
+  (interactive)
+  (user-error "Scrape previews are read-only; this command uses the Synaxis database"))
 
-(define-derived-mode synaxis-scrape-test-mode synaxis-search-mode "Synax-Test"
+(keymap-popup-define synaxis-scrape-test-mode-map
+  "Keymap for `synaxis-scrape-test-mode'."
+  :parent synaxis-tl-list-mode-map
+  :description
+  (lambda ()
+    (format "scrape preview  [%d entries]"
+            (if (boundp 'tabulated-list-entries)
+                (length tabulated-list-entries)
+              0)))
+  :group "Navigation"
+  "n" ("Next" next-line :stay-open t)
+  "p" ("Previous" previous-line :stay-open t)
+  "RET" ("Open" synaxis-scrape-test-show)
+  "b" ("Browse URL" synaxis-search-browse-entry)
+  "c" ("Copy URL" synaxis-search-copy-link)
+  :group "View"
+  "q" ("Quit" quit-window))
+
+(dolist (key '("g" "l" "r" "R" "t" ";" "A" "D" "E" "u"))
+  (keymap-set synaxis-scrape-test-mode-map
+              key #'synaxis-scrape-test--read-only-command))
+
+(define-derived-mode synaxis-scrape-test-mode tabulated-list-mode "Synax-Test"
   "Preview scraped entries without writing to the database.
-Inherits everything from `synaxis-search-mode' so the layout
-matches the real list; RET on a row renders the entry via
-`synaxis-show-entry-plist' using `synaxis-scrape-test--entries' as
-the source instead of the DB."
+The mode keeps the shared search-list layout, but uses a preview
+keymap and buffer-local rows so refresh and mutation keys cannot
+query or write to the real Synaxis database."
+  (setq tabulated-list-format (synaxis-search--format))
+  (setq tabulated-list-padding 1)
+  (setq tabulated-list-sort-key nil)
+  (setq-local truncate-lines t)
   (setq-local revert-buffer-function
               (lambda (&rest _)
-                (user-error "Re-invoke synaxis-scrape-test to refresh"))))
+                (user-error "Re-invoke synaxis-scrape-test to refresh")))
+  (tabulated-list-init-header))
 
 (defun synaxis-scrape--render-test-buffer (url entries)
   "Pop the scrape-test buffer with ENTRIES extracted from URL."
