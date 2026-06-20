@@ -98,6 +98,8 @@ returned and `synaxis-fetch--in-flight' is empty.  Hook bodies run
 on the next event-loop tick, not inside the dying URL response
 buffer.")
 
+(declare-function synaxis-search--auto-refresh "synaxis-search" ())
+
 (defun synaxis-fetch--in-flight-p (url)
   "Non-nil if URL is currently being fetched."
   (gethash url synaxis-fetch--in-flight))
@@ -153,8 +155,14 @@ Return non-nil when URL was present in `synaxis-fetch--in-flight'."
     (remhash url synaxis-fetch--in-flight)
     (when (zerop (hash-table-count synaxis-fetch--in-flight))
       (synaxis-fetch--cache-advice-toggle nil)
-      (run-at-time 0 nil #'run-hooks 'synaxis-fetch-queue-drained-hook))
+      (run-at-time 0 nil #'synaxis-fetch--queue-drained))
     t))
+
+(defun synaxis-fetch--queue-drained ()
+  "Run internal and user callbacks for a drained fetch queue."
+  (when (fboundp 'synaxis-search--auto-refresh)
+    (synaxis-search--auto-refresh))
+  (run-hooks 'synaxis-fetch-queue-drained-hook))
 
 (defun synaxis-fetch--conditional-headers (feed)
   "Return `If-None-Match' / `If-Modified-Since' headers from FEED, or nil.

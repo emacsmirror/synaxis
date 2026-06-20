@@ -322,18 +322,26 @@
 ;;; Queue-drained hook
 
 (defun synaxis-fetch-test--drain-call-p (call)
-  "Non-nil when CALL schedules `synaxis-fetch-queue-drained-hook'."
+  "Non-nil when CALL schedules the fetch queue-drained dispatcher."
   (and (equal 0 (nth 0 call))
        (null (nth 1 call))
-       (eq (nth 2 call) #'run-hooks)
-       (equal (nth 3 call) '(synaxis-fetch-queue-drained-hook))))
+       (eq (nth 2 call) #'synaxis-fetch--queue-drained)
+       (null (nth 3 call))))
 
 (defun synaxis-fetch-test--drain-calls (scheduled)
-  "Return queue-drained hook scheduling calls from SCHEDULED."
+  "Return queue-drained dispatcher scheduling calls from SCHEDULED."
   (cl-remove-if-not #'synaxis-fetch-test--drain-call-p scheduled))
 
-(ert-deftest synaxis-fetch-test-callback-schedules-queue-drained-hook-on-drain ()
-  "Schedule the drained hook when the callback empties the in-flight table."
+(ert-deftest synaxis-fetch-test-queue-drained-runs-user-hook ()
+  "The internal queue-drained dispatcher preserves user hook callbacks."
+  (let (called)
+    (let ((synaxis-fetch-queue-drained-hook
+           (list (lambda () (setq called t)))))
+      (synaxis-fetch--queue-drained))
+    (should called)))
+
+(ert-deftest synaxis-fetch-test-callback-schedules-queue-drained-on-drain ()
+  "Schedule the drained dispatcher when the callback empties the in-flight table."
   (synaxis-tests--with-tmp
    (let* ((url "https://example.com/atom")
           (buf (synaxis-tests--http-response
@@ -368,7 +376,7 @@
      (should (= 1 (hash-table-count synaxis-fetch--in-flight)))
      (should-not (synaxis-fetch-test--drain-calls scheduled)))))
 
-(ert-deftest synaxis-fetch-test-scrape-schedules-queue-drained-hook-on-drain ()
+(ert-deftest synaxis-fetch-test-scrape-schedules-queue-drained-on-drain ()
   "Scrape feeds should drain like queued fetches."
   (synaxis-tests--with-tmp
    (let ((url "https://example.com/sc")

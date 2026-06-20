@@ -441,6 +441,8 @@ caps the result count.  Results are ordered by date descending."
 
 ;;; Insert + autotag pipeline
 
+(declare-function synaxis-tag-rules-apply-entry "synaxis" (entry-id))
+
 (defvar synaxis-new-entry-hook nil
   "Functions run when a brand-new entry is inserted into the DB.
 Each function takes the new entry's id.  Not called when an existing
@@ -449,8 +451,9 @@ entry is updated.")
 (defun synaxis-db-upsert-with-tags (url autotags entry &optional preserve-date)
   "Upsert ENTRY under feed URL and tag newly inserted rows.
 ENTRY's `:feed-url' is set by this helper.  When the row is newly
-inserted, applies the `unread' tag plus every tag in AUTOTAGS and
-runs `synaxis-new-entry-hook' with the new id.  Returns the id.
+inserted, applies the `unread' tag, every tag in AUTOTAGS, Synaxis tag
+rules when loaded, and runs `synaxis-new-entry-hook' with the new id.
+Returns the id.
 
 When PRESERVE-DATE is non-nil and the row already exists, its
 stored `:date' is kept rather than overwritten -- first-seen
@@ -466,6 +469,8 @@ semantics for feeds whose dates are pull-time (scrapes)."
     (unless existing
       (synaxis-db-add-tag id "unread")
       (dolist (tag autotags) (synaxis-db-add-tag id tag))
+      (when (fboundp 'synaxis-tag-rules-apply-entry)
+        (synaxis-tag-rules-apply-entry id))
       (run-hook-with-args 'synaxis-new-entry-hook id))
     id))
 

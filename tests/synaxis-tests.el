@@ -153,8 +153,19 @@
          (call-interactively 'synaxis-tag-rules-apply-all)))
      (should-not (member "rust" (synaxis-db-get-tags id))))))
 
-(ert-deftest synaxis-test-rules-wires-into-new-entry-hook ()
-  (should (memq #'synaxis-tag-rules-apply-entry synaxis-new-entry-hook)))
+(ert-deftest synaxis-test-rules-apply-on-fresh-db-insert ()
+  (synaxis-tests--with-tmp
+   (let ((synaxis-tag-rules '((:filter "title:Rust" :add ("rust")))))
+     (synaxis-db-add-feed "https://example.com/x")
+     (let ((id (synaxis-db-upsert-with-tags
+                "https://example.com/x"
+                nil
+                (list :source-id "1"
+                      :feed-url "https://example.com/x"
+                      :title "Rust"
+                      :link "https://example.com/x/1"
+                      :date 1.0))))
+       (should (member "rust" (synaxis-db-get-tags id)))))))
 
 ;;; synaxis-create-feed
 

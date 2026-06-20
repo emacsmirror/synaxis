@@ -587,8 +587,6 @@ With point on no row, falls back to `synaxis-edit-feed's prompt."
 
 ;;; Auto-refresh on fetch-queue drain
 
-(defvar synaxis-fetch-queue-drained-hook)
-
 (defun synaxis-search--goto-entry (id)
   "Move point to the tabulated-list row whose id equals ID.
 Return the row position, or nil when no row matches."
@@ -628,8 +626,6 @@ point falls back to `point-min'."
             (synaxis-search-refresh)
             (unless (and id (synaxis-search--goto-entry id))
               (goto-char (point-min)))))))))
-
-(add-hook 'synaxis-fetch-queue-drained-hook #'synaxis-search--auto-refresh)
 
 (provide 'synaxis-search)
 ;;; synaxis-search.el ends here

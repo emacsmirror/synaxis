@@ -109,7 +109,7 @@ Each rule is a plist with keys:
   :add    LIST   -- tag strings to add to matching entries (optional)
   :remove LIST   -- tag strings to remove from matching entries (optional)
 
-Rules fire on every fresh entry insert via `synaxis-new-entry-hook'.
+Rules fire on every fresh entry insert when Synaxis is loaded.
 Run `synaxis-tag-rules-apply-all' to back-apply across the whole DB.
 
 Values with whitespace must be double-quoted so they parse as one
@@ -209,10 +209,6 @@ Read-only; no tags are changed."
              count
              (if (= count 1) "" "es")
              (if sample (concat ": " (string-join sample "; ")) ""))))
-
-;; Wire rules into the new-entry hook.  Safe when synaxis-tag-rules is nil
-;; (apply-entry simply does nothing).
-(add-hook 'synaxis-new-entry-hook #'synaxis-tag-rules-apply-entry)
 
 ;;; Scrape feed creation
 
