@@ -5,6 +5,7 @@ research
 /synaxis-pkg.el
 /lisp/synaxis-autoloads.el
 /lisp/synaxis-pkg.el
+/local.mk
 .*
 !.gitignore
 !.elpaignore

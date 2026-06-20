@@ -35,6 +35,8 @@ LISP  := $(wildcard lisp/synaxis*.el)
 TESTS := $(wildcard tests/synaxis*-tests.el)
 TEST_STAMPS := $(patsubst tests/%.el,$(TEST_RESULTS)/%.stamp,$(TESTS))
 
+-include local.mk
+
 BATCH = $(EMACS_CMD) $(EMACS_OPTS) $(LOAD)
 
 all: compile test
