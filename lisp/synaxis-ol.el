@@ -111,11 +111,10 @@ to PATH)."
       (_      desc))))
 
 ;;;###autoload
-(with-eval-after-load 'ol
-  (org-link-set-parameters "synaxis"
-                           :store #'synaxis-ol-store-link
-                           :follow #'synaxis-ol-follow
-                           :export #'synaxis-ol-export))
+(org-link-set-parameters "synaxis"
+                         :store #'synaxis-ol-store-link
+                         :follow #'synaxis-ol-follow
+                         :export #'synaxis-ol-export)
 
 (provide 'synaxis-ol)
 ;;; synaxis-ol.el ends here
