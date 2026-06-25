@@ -242,8 +242,8 @@ options can't be parsed."
 
 (defun synaxis-db-add-feed (url &optional plist)
   "Insert or upsert feed URL.
-PLIST may contain `:title', `:type', `:meta'.  Keys absent from PLIST
-keep the existing column values (`COALESCE') rather than clobbering
+PLIST may contain :title, :type, and :meta.  Keys absent from PLIST
+keep the existing column values (COALESCE) rather than clobbering
 them with nil."
   (let ((db (synaxis-db--ensure-open)))
     (sqlite-execute

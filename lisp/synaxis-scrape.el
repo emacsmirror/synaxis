@@ -224,7 +224,7 @@ UTF-8 (see `synaxis-parse--decode-bytes')."
 Fills in zeros for missing hour/minute/second so date-only strings
 like \"May 15, 2026\" (no time component) still encode.  Preserves
 the timezone from the decoded time when present (e.g. trailing
-`Z').  A value with no timezone (a bare date) is treated as UTC, so
+letter Z).  A value with no timezone (a bare date) is treated as UTC, so
 date-only inputs do not shift a day under a non-UTC local zone."
   (and (stringp s) (not (string-empty-p s))
        (condition-case nil

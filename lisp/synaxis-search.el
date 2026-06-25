@@ -25,7 +25,7 @@
 ;;; Commentary:
 
 ;; The entry list buffer.  Pure renderer: holds no derived state.
-;; Every refresh re-runs a SQL `SELECT' and feeds rows into
+;; Every refresh re-runs a SQL SELECT and feeds rows into
 ;; `tabulated-list-mode' via `synaxis-tl-print'.  Tag commands write
 ;; through to the database and replace just the affected row.
 

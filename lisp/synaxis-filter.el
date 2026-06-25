@@ -24,8 +24,8 @@
 
 ;;; Commentary:
 
-;; Filter mini-language with notmuch/forgejo-style `KEY:VALUE' tokens,
-;; compiled to a SQL `WHERE' clause and parameter list.
+;; Filter mini-language with notmuch/forgejo-style KEY:VALUE tokens,
+;; compiled to a SQL WHERE clause and parameter list.
 ;;
 ;; Supported tokens:
 ;;
@@ -40,18 +40,18 @@
 ;;   WORD                         free text in (title OR content); AND-ed
 ;;
 ;; All non-empty whitespace-separated tokens are AND-ed.  Unknown
-;; prefixes are silently dropped.  `-date:' and `-limit:' are
-;; meaningless and ignored.  Bare-word negation (`-WORD') is not
-;; supported in v0.1.1 -- use `-title:' or `-content:' instead.
+;; prefixes are silently dropped.  -date: and -limit: are
+;; meaningless and ignored.  Bare-word negation (-WORD) is not
+;; supported in v0.1.1 -- use -title: or -content: instead.
 ;;
-;; Multi-word values go in double quotes: `title:"drug something"'
-;; matches via SQL LIKE `%drug something%' (case-insensitive).
+;; Multi-word values go in double quotes: title:"drug something"
+;; matches via SQL LIKE %drug something% (case-insensitive).
 ;;
-;; Date values understand the keywords `today', `yesterday',
-;; `thisweek', `thismonth', `thisyear', ISO forms `YYYY',
-;; `YYYY-MM', `YYYY-MM-DD', relative offsets `7d', `1y',
-;; `30months', and the arithmetic form `now', `now-Nunit',
-;; `now+Nunit'.  Comparison operators (`>=', `<=', `>', `<')
+;; Date values understand the keywords today, yesterday,
+;; thisweek, thismonth, thisyear, ISO forms YYYY,
+;; YYYY-MM, YYYY-MM-DD, relative offsets 7d, 1y,
+;; 30months, and the arithmetic form now, now-Nunit,
+;; now+Nunit.  Comparison operators (>=, <=, >, <)
 ;; produce one SQL clause each; `date:>2024-03' means "strictly
 ;; after March 2024".  Use `M-x synaxis-filter-explain' to view
 ;; the compiled WHERE and parameters for any filter string.
@@ -218,7 +218,7 @@ values (where :from = :to) and span values like `2024-03-15' or
     ((or ">" "<=") (plist-get spec :to))))
 
 (defun synaxis-filter--date-cmp-token (val)
-  "Parse VAL as `OPSPEC' and return a `date-cmp' cell, or nil.
+  "Parse VAL as OPSPEC and return a date-cmp cell, or nil.
 Returns nil when VAL has no operator prefix or SPEC is unparseable."
   (and (string-match "\\`\\(>=\\|<=\\|>\\|<\\)\\(.+\\)\\'" val)
        (and-let* ((op (match-string 1 val))
@@ -311,7 +311,7 @@ inside quotes is preserved.  See `synaxis-filter--tokenize'."
   (concat "NOT " synaxis-filter--exists-sql))
 
 (defun synaxis-filter--like-clause (col negated)
-  "SQL fragment matching COL with `LIKE'.  Negate when NEGATED."
+  "SQL fragment matching COL with LIKE.  Negate when NEGATED."
   (format "%s %s ? COLLATE NOCASE" col (if negated "NOT LIKE" "LIKE")))
 
 (defun synaxis-filter--like-token (col tok negated)
