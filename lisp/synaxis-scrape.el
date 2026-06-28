@@ -589,16 +589,6 @@ and renders it via `synaxis-show-entry-plist'.  Inspect with
         :unread      t
         :tags        nil))
 
-(define-derived-mode synaxis-scrape-test-mode synaxis-search-mode "Synax-Test"
-  "Preview scraped entries without writing to the database.
-Inherits everything from `synaxis-search-mode' so the layout
-matches the real list; RET on a row renders the entry via
-`synaxis-show-entry-plist' using `synaxis-scrape-test--entries' as
-the source instead of the DB."
-  (setq-local revert-buffer-function
-              (lambda (&rest _)
-                (user-error "Re-invoke synaxis-scrape-test to refresh"))))
-
 (defun synaxis-scrape-test-show ()
   "Render the entry at point from the buffer-local preview store."
   (interactive)
@@ -609,7 +599,19 @@ the source instead of the DB."
     (require 'synaxis-show)
     (synaxis-show-entry-plist entry)))
 
-(keymap-set synaxis-scrape-test-mode-map "RET" #'synaxis-scrape-test-show)
+(defvar-keymap synaxis-scrape-test-mode-map
+  :doc "Keymap for `synaxis-scrape-test-mode'."
+  "RET" #'synaxis-scrape-test-show)
+
+(define-derived-mode synaxis-scrape-test-mode synaxis-search-mode "Synax-Test"
+  "Preview scraped entries without writing to the database.
+Inherits everything from `synaxis-search-mode' so the layout
+matches the real list; RET on a row renders the entry via
+`synaxis-show-entry-plist' using `synaxis-scrape-test--entries' as
+the source instead of the DB."
+  (setq-local revert-buffer-function
+              (lambda (&rest _)
+                (user-error "Re-invoke synaxis-scrape-test to refresh"))))
 
 (defun synaxis-scrape--render-test-buffer (url entries)
   "Pop the scrape-test buffer with ENTRIES extracted from URL."

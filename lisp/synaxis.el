@@ -211,8 +211,6 @@ Read-only; no tags are changed."
 
 ;;; Scrape feed creation
 
-(declare-function synaxis-db-add-scrape-rule "synaxis-db" (url plist))
-
 (defconst synaxis-create-feed--rule-keys
   '(:url-selector :url-pattern :content-selector :content-cleanup
                   :title-cleanup :date-selector :date-format :limit)

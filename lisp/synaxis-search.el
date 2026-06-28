@@ -40,7 +40,7 @@
 (require 'parse-time)
 
 (declare-function synaxis-show-entry "synaxis-show" (entry-id &optional peers))
-(declare-function synaxis-fetch-all "synaxis-fetch" ())
+(declare-function synaxis-fetch-all "synaxis-fetch" (&optional respect-backoff))
 (declare-function synaxis-add-feed "synaxis" (url &optional title))
 (declare-function synaxis-remove-feed "synaxis" (url))
 (declare-function synaxis-edit-feed "synaxis-edit" (&optional url))
