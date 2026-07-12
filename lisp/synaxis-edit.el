@@ -5,7 +5,7 @@
 ;; Author: Thanos Apollo <public@thanosapollo.org>
 ;; Maintainer: Thanos Apollo <public@thanosapollo.org>
 ;; Keywords: news, hypermedia, rss, atom
-;; URL: https://codeberg.org/thanosapollo/emacs-synaxis
+;; URL: https://git.thanosapollo.org/synaxis
 
 ;; This file is NOT part of GNU Emacs.
 

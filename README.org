@@ -25,14 +25,14 @@ With use-package and Emacs 30+ =:vc= keyword:
 
 #+begin_src elisp
 (use-package synaxis
-  :vc (:url "https://codeberg.org/thanosapollo/emacs-synaxis")
+  :vc (:url "https://git.thanosapollo.org/synaxis")
   :bind ("C-c r" . synaxis))
 #+end_src
 
 On Emacs 29 use =package-vc-install= directly:
 
 #+begin_src elisp
-(package-vc-install "https://codeberg.org/thanosapollo/emacs-synaxis")
+(package-vc-install "https://git.thanosapollo.org/synaxis")
 #+end_src
 
 =keymap-popup= is pulled in automatically from GNU ELPA.
