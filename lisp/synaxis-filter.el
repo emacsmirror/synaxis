@@ -265,11 +265,14 @@ If TOK has no `:', treat as a bare word, or drop when NEGATED."
     (synaxis-filter--classify-prefixed (substring tok 1) t))
    (t (synaxis-filter--classify-prefixed tok nil))))
 
-(defun synaxis-filter--tokenize (s)
+(defun synaxis-filter--tokenize (s &optional keep-quotes)
   "Split S into tokens, respecting double-quoted segments.
 Whitespace inside `\"...\"' is preserved.  `\\\"' inside a quoted
 segment becomes a literal `\"'.  Empty tokens are dropped.  An
-unmatched opening quote is treated as if closed at end-of-string."
+unmatched opening quote is treated as if closed at end-of-string.
+
+When KEEP-QUOTES is non-nil, retain quote delimiters and escaped
+quotes in the returned tokens."
   (named-let walk ((i 0) (in-quote nil) (cur nil) (out nil))
     (let ((flush (lambda (acc xs)
                    (let ((tok (and acc (apply #'string (nreverse acc)))))
@@ -282,9 +285,15 @@ unmatched opening quote is treated as if closed at end-of-string."
        ((and in-quote (eq (aref s i) ?\\)
              (< (1+ i) (length s))
              (eq (aref s (1+ i)) ?\"))
-        (walk (+ i 2) t (cons ?\" cur) out))
+        (walk (+ i 2) t
+              (if keep-quotes
+                  (cons ?\" (cons ?\\ cur))
+                (cons ?\" cur))
+              out))
        ((eq (aref s i) ?\")
-        (walk (1+ i) (not in-quote) cur out))
+        (walk (1+ i) (not in-quote)
+              (if keep-quotes (cons ?\" cur) cur)
+              out))
        ((and (not in-quote) (memq (aref s i) '(?\s ?\t ?\n)))
         (walk (1+ i) nil nil (funcall flush cur out)))
        (t

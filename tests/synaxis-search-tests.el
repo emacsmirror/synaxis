@@ -171,6 +171,25 @@
        (call-interactively 'synaxis-search-set-filter))
      (should (equal "tag:starred feed:hackaday" synaxis-search--filter)))))
 
+(ert-deftest synaxis-search-test-set-filter-crm-initial-preserves-quoted-value ()
+  "Filter CRM initial input keeps quoted multi-word values together."
+  (synaxis-tests--with-tmp
+   (synaxis-tests--seed-entry "https://example.com/x" "1" "T" 1.0 t)
+   (let ((synaxis-search-default-filter ""))
+     (synaxis-search))
+   (with-current-buffer "*synaxis*"
+     (setq synaxis-search--filter "feed:\"PubMed Trending\" +med")
+     (let (initial)
+       (cl-letf (((symbol-function 'completing-read-multiple)
+                  (lambda (_prompt _candidates &optional _predicate _require-match
+                                   initial-input &rest _)
+                    (setq initial initial-input)
+                    (split-string initial-input "," t))))
+         (call-interactively 'synaxis-search-set-filter))
+       (should (equal "feed:\"PubMed Trending\",+med" initial))
+       (should (equal "feed:\"PubMed Trending\" +med"
+                      synaxis-search--filter))))))
+
 (ert-deftest synaxis-search-test-tag-entry-uses-completing-read ()
   (synaxis-tests--with-tmp
    (let ((id (synaxis-tests--seed-entry

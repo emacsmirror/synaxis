@@ -525,14 +525,18 @@ Completes against the entry's current tags only."
   (message "synaxis: marks cleared"))
 
 
+(defun synaxis-search--filter-initial-input (default)
+  "Return DEFAULT as comma-separated CRM initial input."
+  (string-join (synaxis-filter--tokenize (or default "") t) ","))
+
 (defun synaxis-search--read-filter (default)
   "Read a filter string with `completing-read-multiple' and `,' separator.
-DEFAULT is the current filter (whitespace-separated); spaces are
-swapped for commas so CRM splits the initial value into items.
+DEFAULT is the current filter.  It is tokenized before being joined
+with commas so quoted multi-word values stay in a single CRM item.
 The returned string is whitespace-joined for the parser."
   (let* ((candidates (synaxis-filter-completions))
          (crm-separator ",")
-         (initial (replace-regexp-in-string " " "," (or default ""))))
+         (initial (synaxis-search--filter-initial-input default)))
     (string-join
      (completing-read-multiple "Filter: " candidates nil nil initial)
      " ")))
