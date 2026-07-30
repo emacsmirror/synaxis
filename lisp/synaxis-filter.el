@@ -166,7 +166,9 @@ Recognised units: s, m, h, d, w, months, y.  nil otherwise."
 
 (defun synaxis-filter--now-date (s)
   "Parse S as `now', `now-Nunit', or `now+Nunit'; nil otherwise.
-Returns a `(:from T :to T)' plist where T is the resolved epoch."
+Returns a `(:from T :to T)' plist where T is the resolved epoch.
+Point values are for comparison operators; bare `date:now...' tokens
+expand via `synaxis-filter--bare-now-date'."
   (and (string-match
         "\\`now\\(?:\\([-+]\\)\\([0-9]+\\)\\(months\\|s\\|m\\|h\\|d\\|w\\|y\\)\\)?\\'"
         s)
@@ -180,6 +182,26 @@ Returns a `(:from T :to T)' plist where T is the resolved epoch."
                       (delta (if (equal sign "-") (- secs) secs))
                       (resolved (+ now delta)))
              (list :from resolved :to resolved))))))
+
+(defun synaxis-filter--bare-now-date (s)
+  "Parse bare now-form S into a non-degenerate filter interval, or nil.
+`now' is open-ended from the current epoch (`:to' nil).
+`now-Nunit' is the trailing window from that past point to now.
+`now+Nunit' is the forward window from now to that future point.
+Comparison operators still use `synaxis-filter--now-date' point specs."
+  (and (string-match
+        "\\`now\\(?:\\([-+]\\)\\([0-9]+\\)\\(months\\|s\\|m\\|h\\|d\\|w\\|y\\)\\)?\\'"
+        s)
+       (let ((now (float-time))
+             (sign (match-string 1 s)))
+         (if (null sign)
+             (list :from now :to nil)
+           (and-let* ((secs (synaxis-filter--duration-seconds
+                             (string-to-number (match-string 2 s))
+                             (match-string 3 s))))
+             (if (equal sign "-")
+                 (list :from (- now secs) :to now)
+               (list :from now :to (+ now secs))))))))
 
 (defun synaxis-filter--simple-date-spec (s)
   "Dispatch S to one of the simple-date sub-parsers."
@@ -239,7 +261,8 @@ Returns nil when VAL has no operator prefix or SPEC is unparseable."
     ('tag   (cons (if negated 'not-tag 'tag) val))
     ('date  (and (not negated)
                  (or (synaxis-filter--date-cmp-token val)
-                     (let ((spec (synaxis-filter-parse-date-spec val)))
+                     (let ((spec (or (synaxis-filter--bare-now-date val)
+                                     (synaxis-filter-parse-date-spec val))))
                        (and spec (cons 'date spec))))))
     ('limit (and (not negated)
                  (let ((n (string-to-number val)))

@@ -553,6 +553,50 @@
     (should (string-match-p "e\\.date >= \\?" (plist-get c :where)))
     (should (= 2 (length (plist-get c :params))))))
 
+;;; bare now-form intervals (not comparison ops)
+
+(ert-deftest synaxis-filter-test-compile-bare-now-not-impossible ()
+  "`date:now' compiles to a non-degenerate interval (not >=T AND <T)."
+  (let* ((toks (synaxis-filter-parse "date:now"))
+         (c (synaxis-filter-compile toks))
+         (params (plist-get c :params))
+         (where (plist-get c :where)))
+    (should (eq 'date (car (car toks))))
+    (should (string-match-p "e\\.date >= \\?" where))
+    ;; Open upper bound, or lower < upper when both bounds present.
+    (should (or (= 1 (length params))
+                (and (= 2 (length params))
+                     (string-lessp (nth 0 params) (nth 1 params)))))))
+
+(ert-deftest synaxis-filter-test-compile-bare-now-minus-7d-last-week ()
+  "`date:now-7d' compiles like last 7 days: >= now-7d and < now."
+  (let* ((before (float-time))
+         (toks (synaxis-filter-parse "date:now-7d"))
+         (after (float-time))
+         (c (synaxis-filter-compile toks))
+         (params (plist-get c :params))
+         (where (plist-get c :where))
+         (from-iso (nth 0 params))
+         (to-iso (nth 1 params))
+         (from (float-time (date-to-time from-iso)))
+         (to (float-time (date-to-time to-iso))))
+    (should (eq 'date (car (car toks))))
+    (should (string-match-p "e\\.date >= \\?" where))
+    (should (string-match-p "e\\.date < \\?" where))
+    (should (= 2 (length params)))
+    (should (< from to))
+    ;; ISO formatting is second-resolution; allow 1s truncation slack.
+    (should (<= (- before (* 7 86400) 1) from (+ (- after (* 7 86400)) 1)))
+    (should (<= (- before 1) to (+ after 1)))))
+
+(ert-deftest synaxis-filter-test-parse-date-cmp-now-still-point ()
+  "Comparison forms still resolve `now-7d' as a single point boundary."
+  (let* ((toks (synaxis-filter-parse "date:>=now-7d"))
+         (c (synaxis-filter-compile toks)))
+    (should (eq 'date-cmp (car (car toks))))
+    (should (string-match-p "\\`e\\.date >= \\?\\'" (plist-get c :where)))
+    (should (= 1 (length (plist-get c :params))))))
+
 ;;; synaxis-filter-explain
 
 (defun synaxis-filter-test--explain-body (filter)
