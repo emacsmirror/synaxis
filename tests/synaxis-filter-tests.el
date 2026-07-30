@@ -556,17 +556,18 @@
 ;;; bare now-form intervals (not comparison ops)
 
 (ert-deftest synaxis-filter-test-compile-bare-now-not-impossible ()
-  "`date:now' compiles to a non-degenerate interval (not >=T AND <T)."
+  "`date:now' compiles open-ended from now: single `e.date >= ?', no upper bound."
   (let* ((toks (synaxis-filter-parse "date:now"))
+         (spec (cdr (car toks)))
          (c (synaxis-filter-compile toks))
          (params (plist-get c :params))
          (where (plist-get c :where)))
     (should (eq 'date (car (car toks))))
+    (should (null (plist-get spec :to)))
+    (should (numberp (plist-get spec :from)))
     (should (string-match-p "e\\.date >= \\?" where))
-    ;; Open upper bound, or lower < upper when both bounds present.
-    (should (or (= 1 (length params))
-                (and (= 2 (length params))
-                     (string-lessp (nth 0 params) (nth 1 params)))))))
+    (should-not (string-match-p "e\\.date < " where))
+    (should (= 1 (length params)))))
 
 (ert-deftest synaxis-filter-test-compile-bare-now-minus-7d-last-week ()
   "`date:now-7d' compiles like last 7 days: >= now-7d and < now."

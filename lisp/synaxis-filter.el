@@ -34,6 +34,10 @@
 ;;   title:V      -title:V        entry title contains / does not contain V
 ;;   content:V    -content:V      entry content contains / does not contain V
 ;;   date:SPEC                    see `synaxis-filter-parse-date-spec'
+;;                                bare date:now... becomes a filter
+;;                                interval at token classification;
+;;                                parse-date-spec and comparisons keep
+;;                                point specs for now-forms
 ;;   date:>=VALUE date:<VALUE     single SQL comparison on e.date
 ;;   date:>VALUE  date:<=VALUE      "
 ;;   limit:N                      cap the result count
@@ -51,7 +55,9 @@
 ;; thisweek, thismonth, thisyear, ISO forms YYYY,
 ;; YYYY-MM, YYYY-MM-DD, relative offsets 7d, 1y,
 ;; 30months, and the arithmetic form now, now-Nunit,
-;; now+Nunit.  Comparison operators (>=, <=, >, <)
+;; now+Nunit.  Bare date:now is open-ended from now;
+;; bare date:now-Nunit is the trailing window to now.
+;; Comparison operators (>=, <=, >, <)
 ;; produce one SQL clause each; `date:>2024-03' means "strictly
 ;; after March 2024".  Use `M-x synaxis-filter-explain' to view
 ;; the compiled WHERE and parameters for any filter string.
