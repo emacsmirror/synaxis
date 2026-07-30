@@ -140,7 +140,8 @@ Date specs:
 |--------------------------+---------------------------------------|
 | =today=, =yesterday=     | Calendar day window.                  |
 | =thisweek=, =thismonth=  | Open-ended back to start of period.   |
-| =Nd=, =Nw=, =Nm=, =Ny=   | Last N days / weeks / months / years. |
+| =Nd=, =Nw=, =Nm=, =Ny=   | Last N days / weeks / minutes / years. |
+| =Nmonths=                | Last N months (30-day units).          |
 | =YYYY-MM-DD=             | A single calendar day.                |
 | =LO..HI=, =LO..=, =..HI= | Range; either end open.               |
 
