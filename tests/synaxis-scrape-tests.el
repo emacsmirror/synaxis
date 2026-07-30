@@ -505,5 +505,20 @@ Also: a second empty span with the same class is skipped."
       (synaxis-db-close)
       (delete-directory dir t))))
 
+(ert-deftest synaxis-scrape-test-fetch-html-nil-buffer-user-error ()
+  "Nil `url-retrieve-synchronously' raises `user-error', not a raw error."
+  (cl-letf (((symbol-function 'url-retrieve-synchronously)
+             (lambda (&rest _) nil)))
+    (should-error (synaxis-scrape--fetch-html "https://example.invalid/x")
+                  :type 'user-error)))
+
+(ert-deftest synaxis-scrape-test-command-nil-fetch-user-error ()
+  "`synaxis-scrape-test' inherits clear user-error on failed retrieve."
+  (cl-letf (((symbol-function 'url-retrieve-synchronously)
+             (lambda (&rest _) nil)))
+    (should-error (synaxis-scrape-test "https://example.invalid/x"
+                                       :url-selector "a")
+                  :type 'user-error)))
+
 (provide 'synaxis-scrape-tests)
 ;;; synaxis-scrape-tests.el ends here

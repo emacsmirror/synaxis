@@ -467,11 +467,14 @@ CALLBACK receives the augmented entry list.  When RULES lacks
   "Synchronously fetch URL and return its decoded HTML body.
 Used by `synaxis-scrape-test'.
 
-401s from the server are surfaced as the response body rather than
-triggering Emacs's interactive auth prompt."
+Signal `user-error' when the request yields no buffer (network failure
+or similar).  401s from the server are surfaced as the response body
+rather than triggering Emacs's interactive auth prompt."
   (let ((url-request-noninteractive t)
         (url-request-extra-headers synaxis-http-request-headers))
     (let ((buf (url-retrieve-synchronously url t t)))
+      (unless buf
+        (user-error "Failed to retrieve %s" url))
       (unwind-protect (synaxis-scrape--decode-html buf)
         (when (buffer-live-p buf) (kill-buffer buf))))))
 
