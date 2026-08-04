@@ -461,28 +461,37 @@ not the index DOM."
 
 (defun synaxis-scrape--queue-article (entry rules tracker done-callback)
   "Fetch ENTRY's :link asynchronously, apply RULES, update TRACKER.
-Calls DONE-CALLBACK with the entry list once all pending fetches return."
+Calls DONE-CALLBACK with the entry list once all pending fetches return.
+Fetch or apply failures message and leave ENTRY unchanged; the scrape
+cycle still completes via `synaxis-scrape--tracker-tick'."
   (let ((url-request-extra-headers synaxis-http-request-headers)
         (url-queue-parallel-processes synaxis-scrape-max-parallel))
     (url-queue-retrieve
      (plist-get entry :link)
-     (lambda (_status entry rules tracker done-callback)
-       (let ((buf (current-buffer)))
+     (lambda (status entry rules tracker done-callback)
+       (let ((buf (current-buffer))
+             (status-error (plist-get status :error)))
          (unwind-protect
-             (let ((result
-                    (condition-case err
-                        (synaxis-scrape--apply-content buf rules)
-                      (error
-                       (message "synaxis: article expand failed for %s: %S"
-                                (plist-get entry :link) err)
-                       nil))))
-               (when (plist-get result :content)
-                 (setq entry (plist-put entry :content (plist-get result :content))))
-               (when (plist-get result :date)
-                 (setq entry (plist-put entry :date
-                                        (synaxis-scrape--prefer-date
-                                         (plist-get result :date)
-                                         (plist-get entry :date))))))
+             (cond
+              (status-error
+               (message "synaxis: article expand failed for %s: %S"
+                        (plist-get entry :link) status-error))
+              (t
+               (let ((result
+                      (condition-case err
+                          (synaxis-scrape--apply-content buf rules)
+                        (error
+                         (message "synaxis: article expand failed for %s: %S"
+                                  (plist-get entry :link) err)
+                         nil))))
+                 (when (plist-get result :content)
+                   (setq entry (plist-put entry :content
+                                          (plist-get result :content))))
+                 (when (plist-get result :date)
+                   (setq entry (plist-put entry :date
+                                          (synaxis-scrape--prefer-date
+                                           (plist-get result :date)
+                                           (plist-get entry :date))))))))
            (when (buffer-live-p buf)
              (kill-buffer buf))
            (synaxis-scrape--tracker-tick tracker entry done-callback))))

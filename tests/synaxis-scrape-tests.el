@@ -339,6 +339,75 @@ Also: a second empty span with the same class is skipped."
     (should fired)
     (should (= 4 (length out)))))
 
+(ert-deftest synaxis-scrape-test-expand-content-surfaces-fetch-error ()
+  "Bad article fetch messages and still completes expand without abort."
+  (let* ((good (list :link "https://example.com/ok"
+                     :title "ok" :date "1970-01-01T00:00:01Z"))
+         (bad (list :link "https://example.com/bad"
+                    :title "bad" :date "1970-01-01T00:00:01Z"))
+         out msgs)
+    (cl-letf (((symbol-function 'url-queue-retrieve)
+               (lambda (url cb cbargs &rest _)
+                 (if (string-match-p "/bad\\'" url)
+                     (with-temp-buffer
+                       (apply cb (list :error '(error http 404)) cbargs))
+                   (with-current-buffer
+                       (synaxis-scrape-tests--response-buffer
+                        "<html><body><article><p>ok body</p></article></body></html>")
+                     (apply cb nil cbargs)))))
+              ((symbol-function 'message)
+               (lambda (fmt &rest args)
+                 (push (apply #'format fmt args) msgs)
+                 nil)))
+      (synaxis-scrape--expand-content
+       (list good bad)
+       '(:url-selector "a" :content-selector "article")
+       (lambda (e) (setq out e))))
+    (should (= 2 (length out)))
+    (let ((by-link (mapcar (lambda (e) (cons (plist-get e :link) e)) out)))
+      (should (string-match-p "ok body"
+                              (or (plist-get (cdr (assoc (plist-get good :link)
+                                                         by-link))
+                                             :content)
+                                  "")))
+      (should-not (plist-get (cdr (assoc (plist-get bad :link) by-link))
+                             :content)))
+    (should (cl-some (lambda (m)
+                       (string-match-p "article expand failed.*bad" m))
+                     msgs))))
+
+(ert-deftest synaxis-scrape-test-expand-content-surfaces-parse-error ()
+  "Apply/parse error messages and still completes expand without abort."
+  (let* ((entries (list (list :link "https://example.com/p/1"
+                              :title "T" :date "1970-01-01T00:00:01Z")
+                        (list :link "https://example.com/p/2"
+                              :title "U" :date "1970-01-01T00:00:01Z")))
+         out msgs)
+    (cl-letf (((symbol-function 'url-queue-retrieve)
+               (lambda (_url cb cbargs &rest _)
+                 (with-current-buffer
+                     (synaxis-scrape-tests--response-buffer
+                      "<html><body><article>x</article></body></html>")
+                   (apply cb nil cbargs))))
+              ((symbol-function 'synaxis-scrape--apply-content)
+               (lambda (_buf _rules)
+                 (error "forced apply failure")))
+              ((symbol-function 'message)
+               (lambda (fmt &rest args)
+                 (push (apply #'format fmt args) msgs)
+                 nil)))
+      (synaxis-scrape--expand-content
+       entries
+       '(:url-selector "a" :content-selector "article")
+       (lambda (e) (setq out e))))
+    (should (= 2 (length out)))
+    (should (cl-every (lambda (e) (null (plist-get e :content))) out))
+    (should (>= (length (cl-remove-if-not
+                         (lambda (m)
+                           (string-match-p "article expand failed" m))
+                         msgs))
+                2))))
+
 ;;; synaxis-scrape-test command
 
 (ert-deftest synaxis-scrape-test-pops-buffer-without-saving ()
