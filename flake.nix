@@ -16,7 +16,7 @@
 
       # synaxis declares (keymap-popup "0.2.1") as its minimum; pin a
       # concrete release here so the test environment is reproducible.
-      keymapPopupVersion = "0.4.0";
+      keymapPopupVersion = "0.4.1";
 
       # Build everything for one concrete Emacs.  Called once per
       # variant (the full build and emacs-nox) so the test matrix can
@@ -40,7 +40,7 @@
             version = keymapPopupVersion;
             src = pkgs.fetchurl {
               url = "https://elpa.gnu.org/packages/keymap-popup-${keymapPopupVersion}.tar";
-              hash = "sha256-ZySAozyALV4fSfqNtFd3YOtW7ZBSFpCr+hAdnPm9v0E=";
+              hash = "sha256-O2t6v0b8xknkevzXu6uu+M/ZiqPhcN/g5MytxKF4DkU=";
             };
             packageRequires = [ ];
           };
