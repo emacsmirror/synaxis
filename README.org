@@ -13,7 +13,7 @@ It is three things stacked:
    /plus/ an HTML scraper for sites that don't.
 2. *Archive* -- a single local SQLite file is the source of truth.
    Views are stateless renderers; nothing is cached in Elisp.
-3. *Query* -- a filter mini-language (=+tag -tag feed: title:
+3. *Query* -- a filter mini-language (=tag: -tag: feed: title:
    date:=) compiles to SQL, plus =synaxis-tag-rules= for autotagging
    on new entries.
 
@@ -51,8 +51,9 @@ discoverable menu of every command on its prefix key.
 
 ** RSS / Atom / JSON
 
-=synaxis-add-feed= takes a URL and optional title.  The feed type is
-auto-detected at first fetch.
+=synaxis-add-feed= takes a URL and optional title.  On first
+successful fetch the feed type (=rss=, =atom=, =json=, =rss1=) is
+written from the parsed body.
 
 ** Scrape feeds (sites without a feed)
 
@@ -66,6 +67,7 @@ its HTML into entries.  Recognised rule keys:
 | =:limit=             | Cap the entry count per fetch.                                |
 | =:title-cleanup=     | Substring removed from extracted titles.                      |
 | =:date-selector=     | CSS selector for the date node (=datetime= attr or text).     |
+| =:date-format=       | Optional strftime-like pattern (=%Y %m %d %H %M %S=) for text. |
 | =:content-selector=  | CSS selector on the article page; triggers per-article fetch. |
 | =:content-cleanup=   | Selector for noise nodes to strip from extracted content.     |
 
@@ -123,7 +125,7 @@ tokens that compile to a single SQL =WHERE= clause.
 | Token            | Matches                                                  |
 |------------------+----------------------------------------------------------|
 | =word=           | Entry title or content contains =word= (case-insens.).   |
-| =+tag=, =tag:t=  | Entry has tag =t=.                                       |
+| =tag:t=          | Entry has tag =t=.                                       |
 | =-tag:t=         | Entry does *not* have tag =t=.                           |
 | =feed:str=       | Feed title contains =str=.                               |
 | =title:str=      | Entry title contains =str=.                              |
@@ -131,7 +133,8 @@ tokens that compile to a single SQL =WHERE= clause.
 | =date:spec=      | Entry date matches =spec= (see below).                   |
 | =limit:N=        | Cap result count to =N=.                                 |
 
-Negate any field with a leading =-= (=-feed:=, =-title:=, etc.).
+Negate field tokens with a leading =-= (=-feed:=, =-title:=, etc.).
+Bare =-word= is not supported; use =-title:= / =-content:= / =-tag:=.
 Quote values containing whitespace: =title:"drug interaction"=.
 
 Date specs:
@@ -148,9 +151,9 @@ Date specs:
 Examples:
 
 #+begin_example
-+emacs -opinion date:7d
+tag:emacs -tag:opinion date:7d
 feed:medscape title:"clinical trial" date:30d
-+unread -feed:hackaday limit:20
+tag:unread -feed:hackaday limit:20
 #+end_example
 
 * Tags and autotags

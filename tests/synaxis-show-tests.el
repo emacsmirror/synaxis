@@ -179,5 +179,14 @@
     (synaxis-show-mode)
     (should-error (synaxis-show-browse-entry) :type 'user-error)))
 
+(ert-deftest synaxis-show-test-render-tolerates-bad-date ()
+  "Bad ISO dates must not signal when rendering."
+  (with-temp-buffer
+    (synaxis-show-render-shr
+     '(:title "T" :feed-title "F" :date "not-a-date" :content "hi" :content-type "text"))
+    (goto-char (point-min))
+    (should (search-forward "not-a-date" nil t))
+    (should (search-forward "hi" nil t))))
+
 (provide 'synaxis-show-tests)
 ;;; synaxis-show-tests.el ends here

@@ -523,5 +523,39 @@
        (synaxis-fetch-all))
      (should (member "https://bad.example/feed" fetched)))))
 
+(ert-deftest synaxis-fetch-test-ingest-sets-type-from-parse ()
+  "Successful atom ingest stores type atom."
+  (synaxis-tests--with-tmp
+   (let* ((url "https://example.com/atom")
+          (buf (synaxis-tests--http-response
+                "200 OK" nil
+                (synaxis-tests--load-fixture "atom-1.0-minimal.xml"))))
+     (synaxis-fetch--process-response buf url)
+     (kill-buffer buf)
+     (should (equal "atom" (plist-get (synaxis-db-get-feed url) :type))))))
+
+(ert-deftest synaxis-fetch-test-undated-preserve-date-on-reingest ()
+  "Synthetic undated guid keeps first-seen date across re-fetch."
+  (synaxis-tests--with-tmp
+   (let* ((url "https://example.com/rss")
+          (body "<?xml version=\"1.0\"?><rss version=\"2.0\"><channel>
+<title>R</title>
+<item><title>U</title><guid>g-stable</guid><link>https://example.com/u</link>
+<description>d</description></item></channel></rss>")
+          (buf1 (synaxis-tests--http-response "200 OK" nil body)))
+     (synaxis-fetch--process-response buf1 url)
+     (kill-buffer buf1)
+     (let* ((e1 (car (synaxis-db-list-entries nil nil)))
+            (d1 (plist-get e1 :date))
+            (id (plist-get e1 :id)))
+       ;; Force a different synthetic date and re-upsert via public path.
+       (synaxis-db-upsert-with-tags
+        url nil
+        (list :source-id "g-stable" :title "U" :link "https://example.com/u"
+              :date "2099-01-01T00:00:00Z" :date-synthetic t
+              :content "d" :content-type "html"))
+       (let ((e2 (synaxis-db-get-entry id)))
+         (should (equal d1 (plist-get e2 :date))))))))
+
 (provide 'synaxis-fetch-tests)
 ;;; synaxis-fetch-tests.el ends here

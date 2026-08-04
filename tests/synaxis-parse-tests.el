@@ -220,5 +220,69 @@ title would resolve to the nested \"NESTED\" node."
          (bytes (encode-coding-string s 'utf-8)))
     (should (equal s (synaxis-parse--decode-bytes bytes nil)))))
 
+(ert-deftest synaxis-parse-test-date-only-iso-is-midnight-utc ()
+  (should (equal "2024-01-01T00:00:00Z"
+                 (synaxis-parse--decode-date "2024-01-01"))))
+
+(ert-deftest synaxis-parse-test-json-date-modified-and-summary-external-url ()
+  (let* ((raw "{\"version\":\"https://jsonfeed.org/version/1.1\",\"items\":[{\"id\":\"1\",\"title\":\"T\",\"external_url\":\"https://example.com/x\",\"date_modified\":\"2020-06-15T12:00:00Z\",\"summary\":\"SUM\"}]}")
+         (e (car (plist-get (synaxis-parse-string raw) :entries))))
+    (should (equal "2020-06-15T12:00:00Z" (plist-get e :date)))
+    (should (equal "https://example.com/x" (plist-get e :link)))
+    (should (equal "SUM" (plist-get e :content)))))
+
+(ert-deftest synaxis-parse-test-empty-guid-falls-back-to-link ()
+  (let* ((xml "<?xml version=\"1.0\"?><rss version=\"2.0\"><channel>
+<item><title>A</title><link>https://example.com/a</link><guid></guid></item>
+<item><title>B</title><link>https://example.com/b</link><guid></guid></item>
+</channel></rss>")
+         (entries (plist-get (synaxis-parse-string xml) :entries)))
+    (should (= 2 (length entries)))
+    (should (equal "https://example.com/a" (plist-get (nth 0 entries) :source-id)))
+    (should (equal "https://example.com/b" (plist-get (nth 1 entries) :source-id)))))
+
+(ert-deftest synaxis-parse-test-orphan-source-id-stable-without-date ()
+  (let* ((e1 (list :title "Orphan" :date "2024-01-01T00:00:00Z"))
+         (e2 (list :title "Orphan" :date "2024-01-02T00:00:00Z"))
+         (id1 (synaxis-parse--source-id e1 "https://f.example/x"))
+         (id2 (synaxis-parse--source-id e2 "https://f.example/x")))
+    (should (equal id1 id2))
+    (should (string-prefix-p "synaxis:sha1:" id1))))
+
+(ert-deftest synaxis-parse-test-rss1-about-attr-without-prefix ()
+  (let* ((xml "<?xml version=\"1.0\"?>
+<rdf:RDF xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\"
+         xmlns=\"http://purl.org/rss/1.0/\">
+  <channel rdf:about=\"https://example.com/\"><title>C</title><link>https://example.com/</link></channel>
+  <item rdf:about=\"https://example.com/about-only\">
+    <title>About Only</title>
+  </item>
+</rdf:RDF>")
+         (e (car (plist-get (synaxis-parse-string xml) :entries))))
+    (should (equal "https://example.com/about-only" (plist-get e :source-id)))))
+
+(ert-deftest synaxis-parse-test-atom-empty-content-falls-back-to-summary ()
+  (let* ((xml "<?xml version=\"1.0\"?>
+<feed xmlns=\"http://www.w3.org/2005/Atom\">
+  <title>F</title>
+  <entry>
+    <title>T</title>
+    <id>urn:x:1</id>
+    <updated>2024-01-01T00:00:00Z</updated>
+    <content type=\"text\"></content>
+    <summary type=\"text\">SUMBODY</summary>
+  </entry>
+</feed>")
+         (e (car (plist-get (synaxis-parse-string xml) :entries))))
+    (should (equal "SUMBODY" (plist-get e :content)))))
+
+(ert-deftest synaxis-parse-test-undated-marks-date-synthetic ()
+  (let* ((xml "<?xml version=\"1.0\"?><rss version=\"2.0\"><channel>
+<item><title>U</title><guid>g1</guid><link>https://example.com/u</link></item>
+</channel></rss>")
+         (e (car (plist-get (synaxis-parse-string xml) :entries))))
+    (should (plist-get e :date-synthetic))
+    (should (stringp (plist-get e :date)))))
+
 (provide 'synaxis-parse-tests)
 ;;; synaxis-parse-tests.el ends here

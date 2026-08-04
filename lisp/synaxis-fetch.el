@@ -255,15 +255,18 @@ BODY, or UTF-8 (see `synaxis-parse--decode-bytes')."
 HEADERS' ETag and Last-Modified are persisted on success.
 Tags listed in the feed's `meta.autotags' are applied to each
 fresh insert in addition to `unread'."
-  (condition-case _err
+  (condition-case err
       (let* ((parsed (synaxis-parse-string
                       (synaxis-fetch--body-as-string
                        body (cdr (assoc "content-type" headers)))
                       url))
              (feed (synaxis-db-get-feed url))
              (autotags (append (plist-get (plist-get feed :meta) :autotags)
-                               nil)))
+                               nil))
+             (ptype (plist-get parsed :type)))
         (synaxis-db-set-feed-title-if-empty url (plist-get parsed :title))
+        (when ptype
+          (synaxis-db-set-feed-type url (symbol-name ptype)))
         (cl-loop for raw in (plist-get parsed :entries)
                  for entry = (synaxis-fetch--apply-parse-hook raw)
                  when entry
@@ -274,6 +277,7 @@ fresh insert in addition to `unread'."
                    :last-modified (cdr (assoc "last-modified" headers))
                    :failures 0)))
     (error
+     (message "synaxis: parse failed for %s: %S" url err)
      (synaxis-fetch--record-failure url))))
 
 ;;; Public fetch entry points

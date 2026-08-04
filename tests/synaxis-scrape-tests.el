@@ -520,5 +520,19 @@ Also: a second empty span with the same class is skipped."
                                        :url-selector "a")
                   :type 'user-error)))
 
+(ert-deftest synaxis-scrape-test-date-format-applied ()
+  "`:date-format' parses non-ISO date text on the index node."
+  (let* ((html "<html><body>
+<div class=\"item\"><a href=\"/p/1\">T</a><span class=\"d\">15/03/2024</span></div>
+</body></html>")
+         (entries (synaxis-scrape--extract
+                   html "https://example.com/"
+                   '(:url-selector ".item"
+                     :date-selector ".d"
+                     :date-format "%d/%m/%Y"))))
+    (should (= 1 (length entries)))
+    (should (equal "2024-03-15T00:00:00Z"
+                   (plist-get (car entries) :date)))))
+
 (provide 'synaxis-scrape-tests)
 ;;; synaxis-scrape-tests.el ends here

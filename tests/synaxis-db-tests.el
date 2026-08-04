@@ -642,5 +642,39 @@
 	(error "boom"))))
    (should-not (synaxis-db-get-feed "https://b.example/feed"))))
 
+(ert-deftest synaxis-db-test-add-feed-title-only-preserves-scrape-type ()
+  "Title-only re-add must not clobber an existing scrape type."
+  (synaxis-tests--with-tmp
+   (synaxis-db-add-feed "https://example.com/sc" '(:type "scrape" :title "S"))
+   (synaxis-db-add-feed "https://example.com/sc" '(:title "S2"))
+   (let ((feed (synaxis-db-get-feed "https://example.com/sc")))
+     (should (equal "scrape" (plist-get feed :type)))
+     (should (equal "S2" (plist-get feed :title))))))
+
+(ert-deftest synaxis-db-test-set-feed-cache-headers-clears-etag ()
+  "Explicit nil etag/last-modified clears; omit-key preserves."
+  (synaxis-tests--with-tmp
+   (synaxis-db-add-feed "https://example.com/h")
+   (synaxis-db-set-feed-cache-headers
+    "https://example.com/h"
+    '(:etag "W/\"abc\"" :last-modified "Tue, 02 Jan 2024 03:04:05 GMT"
+            :failures 1))
+   (synaxis-db-set-feed-cache-headers
+    "https://example.com/h"
+    '(:etag nil :last-modified nil))
+   (let ((feed (synaxis-db-get-feed "https://example.com/h")))
+     (should-not (plist-get feed :etag))
+     (should-not (plist-get feed :last-modified))
+     (should (equal 1 (plist-get feed :failures))))
+   (synaxis-db-set-feed-cache-headers
+    "https://example.com/h"
+    '(:etag "keep-me"))
+   (synaxis-db-set-feed-cache-headers
+    "https://example.com/h"
+    '(:failures 0))
+   (let ((feed (synaxis-db-get-feed "https://example.com/h")))
+     (should (equal "keep-me" (plist-get feed :etag)))
+     (should (equal 0 (plist-get feed :failures))))))
+
 (provide 'synaxis-db-tests)
 ;;; synaxis-db-tests.el ends here

@@ -154,14 +154,43 @@ Example:
                    (append params (list entry-id)))))
 
 (defun synaxis-tag-rules-apply-entry (entry-id)
-  "Apply each rule in `synaxis-tag-rules' to ENTRY-ID."
-  (dolist (rule synaxis-tag-rules)
-    (let ((add    (plist-get rule :add))
-          (remove (plist-get rule :remove)))
-      (when (and (or add remove)
-                 (synaxis-tag-rules--rule-matches-entry-p rule entry-id))
-        (dolist (tag add)    (synaxis-db-add-tag    entry-id tag))
-        (dolist (tag remove) (synaxis-db-remove-tag entry-id tag))))))
+  "Apply each rule in `synaxis-tag-rules' to ENTRY-ID.
+Matching uses one SELECT for all active rules rather than one
+query per rule."
+  (let ((active (cl-loop for rule in synaxis-tag-rules
+                         when (or (plist-get rule :add)
+                                  (plist-get rule :remove))
+                         collect rule)))
+    (when active
+      (let ((cases nil)
+            (params nil))
+        (dolist (rule active)
+          (pcase-let ((`(,where . ,ps)
+                       (synaxis-tag-rules--filter-sql
+                        (plist-get rule :filter))))
+            (push (format "CASE WHEN (%s) THEN 1 ELSE 0 END" where)
+                  cases)
+            (setq params (append params ps))))
+        (let* ((sql (concat "SELECT "
+                            (string-join (nreverse cases) ", ")
+                            " FROM entries e
+                              JOIN feeds f ON f.url = e.feed_url
+                             WHERE e.id = ?
+                             LIMIT 1;"))
+               (row (car (sqlite-select (synaxis-db--ensure-open)
+                                        sql
+                                        (append params
+                                                (list entry-id))))))
+          (when row
+            (cl-loop for rule in active
+                     for flag in row
+                     when (eql flag 1)
+                     do (let ((add (plist-get rule :add))
+                              (remove (plist-get rule :remove)))
+                          (dolist (tag add)
+                            (synaxis-db-add-tag entry-id tag))
+                          (dolist (tag remove)
+                            (synaxis-db-remove-tag entry-id tag))))))))))
 
 (defun synaxis-tag-rules-apply-all ()
   "Apply every rule in `synaxis-tag-rules' across all entries.

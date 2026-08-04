@@ -52,18 +52,32 @@
 
 ;;; Date helpers
 
+(defun synaxis-parse--nonempty (s)
+  "Return S when it is a non-empty string, else nil."
+  (and (stringp s) (not (string-empty-p s)) s))
+
 (defun synaxis-parse--time-to-iso (time)
   "Format Emacs TIME value as canonical UTC ISO 8601 string.
 Result is `YYYY-MM-DDTHH:MM:SSZ' (literal Z, second precision)."
   (format-time-string "%Y-%m-%dT%H:%M:%SZ" time t))
 
 (defun synaxis-parse--decode-iso8601 (s)
-  "Parse S as ISO 8601 datetime; return canonical ISO string or nil."
+  "Parse S as ISO 8601 datetime; return canonical ISO string or nil.
+Date-only forms such as `2024-01-01' become midnight UTC."
   (and (stringp s)
        (not (string-empty-p s))
        (condition-case nil
            (synaxis-parse--time-to-iso (parse-iso8601-time-string s))
-         (error nil))))
+         (error
+          (and (string-match
+                "\\`\\([0-9]\\{4\\}\\)-\\([0-9]\\{2\\}\\)-\\([0-9]\\{2\\}\\)\\'"
+                s)
+               (synaxis-parse--time-to-iso
+                (encode-time 0 0 0
+                             (string-to-number (match-string 3 s))
+                             (string-to-number (match-string 2 s))
+                             (string-to-number (match-string 1 s))
+                             t)))))))
 
 (defun synaxis-parse--decode-rfc822 (s)
   "Parse S as RFC 822/2822 datetime; return canonical ISO string or nil."
@@ -75,13 +89,27 @@ Result is `YYYY-MM-DDTHH:MM:SSZ' (literal Z, second precision)."
                   (synaxis-parse--time-to-iso (encode-time decoded))))
          (error nil))))
 
+(defun synaxis-parse--decode-date-info (s)
+  "Return (ISO . SYNTHETIC-P) for date string S.
+SYNTHETIC-P is non-nil when ISO is the `current-time' fallback."
+  (let ((real (or (synaxis-parse--decode-iso8601 s)
+                  (synaxis-parse--decode-rfc822 s))))
+    (if real
+        (cons real nil)
+      (cons (synaxis-parse--time-to-iso (current-time)) t))))
+
 (defun synaxis-parse--decode-date (s)
   "Best-effort parse of date string S, returning a canonical ISO string.
 Tries ISO 8601 then RFC 822; falls back to the current time on
 failure, so callers never need to handle a nil date."
-  (or (synaxis-parse--decode-iso8601 s)
-      (synaxis-parse--decode-rfc822 s)
-      (synaxis-parse--time-to-iso (current-time))))
+  (car (synaxis-parse--decode-date-info s)))
+
+(defun synaxis-parse--entry-date-props (s)
+  "Return `(:date ISO)' plus optional `:date-synthetic t' for S."
+  (pcase-let ((`(,iso . ,synthetic) (synaxis-parse--decode-date-info s)))
+    (if synthetic
+        (list :date iso :date-synthetic t)
+      (list :date iso))))
 
 ;;; Charset decoding
 
@@ -193,16 +221,17 @@ Returns a plist with `:content' and `:content-type'."
 (defun synaxis-parse--source-id (entry &optional feed-url)
   "Return a stable source-id for ENTRY, synthesising from content if absent.
 FEED-URL is mixed into the hash so two feeds publishing the same
-content do not collide."
-  (or (plist-get entry :source-id)
+content do not collide.  Empty `:source-id' strings are treated as
+absent.  The synthetic hash deliberately omits `:date' so undated
+orphans do not mint a new id on every fetch."
+  (or (synaxis-parse--nonempty (plist-get entry :source-id))
       (concat "synaxis:sha1:"
               (secure-hash
                'sha1
-               (format "%s|%s|%s|%s"
+               (format "%s|%s|%s"
                        (or feed-url "")
                        (or (plist-get entry :link) "")
-                       (or (plist-get entry :title) "")
-                       (or (plist-get entry :date) ""))))))
+                       (or (plist-get entry :title) ""))))))
 
 (defun synaxis-parse--ensure-source-ids (entries &optional feed-url)
   "Return ENTRIES with every plist's `:source-id' set.
@@ -254,19 +283,26 @@ lacks both `:source-id' and `:link'."
 BASE is the absolute base URL against which a relative entry link
 is resolved (nil leaves the raw href in place)."
   (let* ((title (synaxis-parse--text-node (dom-child-by-tag item 'title)))
-         (id (synaxis-parse--text-node (dom-child-by-tag item 'id)))
+         (id (synaxis-parse--nonempty
+              (synaxis-parse--text-node (dom-child-by-tag item 'id))))
          (raw (synaxis-parse--atom-link item))
          (link (or (synaxis-parse--resolve-url base raw) raw))
-         (date (synaxis-parse--decode-date
-                (or (synaxis-parse--text-node (dom-child-by-tag item 'updated))
-                    (synaxis-parse--text-node (dom-child-by-tag item 'published)))))
-         (cnode (or (dom-child-by-tag item 'content)
-                    (dom-child-by-tag item 'summary)))
-         (cplist (and cnode (synaxis-parse--atom-text-container cnode))))
+         (date-props
+          (synaxis-parse--entry-date-props
+           (or (synaxis-parse--text-node (dom-child-by-tag item 'updated))
+               (synaxis-parse--text-node (dom-child-by-tag item 'published)))))
+         (content-node (dom-child-by-tag item 'content))
+         (summary-node (dom-child-by-tag item 'summary))
+         (cplist
+          (or (and content-node
+                   (let ((p (synaxis-parse--atom-text-container content-node)))
+                     (and (synaxis-parse--nonempty (plist-get p :content)) p)))
+              (and summary-node
+                   (synaxis-parse--atom-text-container summary-node)))))
     (append (list :title (or title "")
                   :source-id id
-                  :link link
-                  :date date)
+                  :link link)
+            date-props
             cplist)))
 
 (defun synaxis-parse--xml-base (node parent-base)
@@ -302,19 +338,21 @@ resolved (nil leaves the raw link in place)."
   (let* ((title (synaxis-parse--text-node (dom-child-by-tag item 'title)))
          (raw (synaxis-parse--text-node (dom-child-by-tag item 'link)))
          (link (or (synaxis-parse--resolve-url base raw) raw))
-         (guid (synaxis-parse--text-node (dom-child-by-tag item 'guid)))
-         (date (synaxis-parse--decode-date
-                (synaxis-parse--text-node (dom-child-by-tag item 'pubDate))))
+         (guid (synaxis-parse--nonempty
+                (synaxis-parse--text-node (dom-child-by-tag item 'guid))))
+         (date-props
+          (synaxis-parse--entry-date-props
+           (synaxis-parse--text-node (dom-child-by-tag item 'pubDate))))
          (encoded (dom-child-by-tag item 'encoded))
          (desc (dom-child-by-tag item 'description))
          (cnode (or encoded desc))
          (content (and cnode (synaxis-parse--text-node cnode))))
-    (list :title (or title "")
-          :source-id (or guid link)
-          :link link
-          :date date
-          :content content
-          :content-type (and content "html"))))
+    (append (list :title (or title "")
+                  :source-id (or guid (synaxis-parse--nonempty link))
+                  :link link
+                  :content content
+                  :content-type (and content "html"))
+            date-props)))
 
 (defun synaxis-parse--from-rss (dom &optional feed-url)
   "Parse DOM as an RSS 2.0 feed.
@@ -339,17 +377,21 @@ resolved (nil leaves the raw link in place)."
   (let* ((title (synaxis-parse--text-node (dom-child-by-tag item 'title)))
          (raw (synaxis-parse--text-node (dom-child-by-tag item 'link)))
          (link (or (synaxis-parse--resolve-url base raw) raw))
-         (about (dom-attr item 'rdf:about))
-         (date (synaxis-parse--decode-date
-                (or (synaxis-parse--text-node (dom-child-by-tag item 'date))
-                    (synaxis-parse--text-node (dom-child-by-tag item 'pubDate)))))
+         ;; libxml strips the rdf: prefix; keep rdf:about as fallback.
+         (about (or (dom-attr item 'about)
+                    (dom-attr item 'rdf:about)))
+         (date-props
+          (synaxis-parse--entry-date-props
+           (or (synaxis-parse--text-node (dom-child-by-tag item 'date))
+               (synaxis-parse--text-node (dom-child-by-tag item 'pubDate)))))
          (desc (synaxis-parse--text-node (dom-child-by-tag item 'description))))
-    (list :title (or title "")
-          :source-id (or about link)
-          :link link
-          :date date
-          :content desc
-          :content-type (and desc "html"))))
+    (append (list :title (or title "")
+                  :source-id (or (synaxis-parse--nonempty about)
+                                 (synaxis-parse--nonempty link))
+                  :link link
+                  :content desc
+                  :content-type (and desc "html"))
+            date-props)))
 
 (defun synaxis-parse--from-rss1 (dom &optional feed-url)
   "Parse DOM as an RSS 1.0 / RDF feed.
@@ -372,19 +414,26 @@ FEED-URL resolves protocol- or page-relative item links."
 BASE is the absolute base URL against which a relative item URL is
 resolved (nil leaves the URL unchanged)."
   (let* ((id (plist-get item :id))
-         (raw (plist-get item :url))
+         (raw (or (plist-get item :url)
+                  (plist-get item :external_url)))
          (url (or (synaxis-parse--resolve-url base raw) raw))
          (title (plist-get item :title))
-         (date (synaxis-parse--decode-date
-                (plist-get item :date_published)))
+         (date-props
+          (synaxis-parse--entry-date-props
+           (or (plist-get item :date_published)
+               (plist-get item :date_modified))))
          (html (plist-get item :content_html))
-         (text (plist-get item :content_text)))
-    (list :title (or title "")
-          :source-id (and id (format "%s" id))
-          :link url
-          :date date
-          :content (or html text)
-          :content-type (cond (html "html") (text "text")))))
+         (text (plist-get item :content_text))
+         (summary (plist-get item :summary))
+         (content (or html text summary)))
+    (append (list :title (or title "")
+                  :source-id (and id (format "%s" id))
+                  :link url
+                  :content content
+                  :content-type (cond (html "html")
+                                      (text "text")
+                                      (summary "text")))
+            date-props)))
 
 (defun synaxis-parse--from-json (object &optional feed-url)
   "Parse OBJECT (a JSON Feed top-level plist) into a feed plist.

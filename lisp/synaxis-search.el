@@ -65,7 +65,7 @@ See `synaxis-filter-parse' for the syntax."
 (defcustom synaxis-search-default-limit nil
   "Default maximum number of entries shown in the list buffer.
 Nil means no limit -- the filter returns every matching row.
-Override per query with `#N' in the filter string."
+Override per query with `limit:N' in the filter string."
   :type '(choice (const :tag "No limit" nil) integer)
   :group 'synaxis
   :package-version '(synaxis . "0.1"))
@@ -169,16 +169,20 @@ when set, otherwise falls back to `synaxis-search-tag-face'."
               :test #'string=)
    " "))
 
+(defun synaxis-search--format-date (date-iso)
+  "Format DATE-ISO for the entry list; return raw string on parse failure."
+  (if (not date-iso)
+      ""
+    (condition-case nil
+        (format-time-string "%Y-%m-%d"
+                            (parse-iso8601-time-string date-iso))
+      (error (format "%s" date-iso)))))
+
 (defun synaxis-search--entry-columns (entry)
   "Convert ENTRY plist to the column vector used by `tabulated-list-mode'.
 Reads `:unread' and `:tags' from ENTRY rather than re-querying the DB."
   (let* ((unread (plist-get entry :unread))
-         (date-iso (plist-get entry :date))
-         (date   (if date-iso
-                     (format-time-string
-                      "%Y-%m-%d"
-                      (parse-iso8601-time-string date-iso))
-                   ""))
+         (date   (synaxis-search--format-date (plist-get entry :date)))
          (mark   (if unread "*" " "))
          (feed   (or (plist-get entry :feed-title) "?"))
          (tags   (synaxis-search--render-tags (plist-get entry :tags)))

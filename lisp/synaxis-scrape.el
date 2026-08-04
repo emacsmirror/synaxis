@@ -222,45 +222,95 @@ UTF-8 (see `synaxis-parse--decode-bytes')."
 
 ;;; Date extraction
 
-(defun synaxis-scrape--parse-time-loose (s)
+(defun synaxis-scrape--parse-with-format (s fmt)
+  "Parse date string S with strftime-like FMT.
+Supports %Y, %m, %d, %H, %M, %S.  Returns canonical ISO or nil."
+  (and (stringp s) (stringp fmt) (not (string-empty-p s))
+       (let ((subs nil)
+             (parts nil)
+             (i 0)
+             (len (length fmt)))
+         (while (< i len)
+           (if (and (= (aref fmt i) ?%)
+                    (< (1+ i) len)
+                    (memq (aref fmt (1+ i)) '(?Y ?m ?d ?H ?M ?S)))
+               (progn
+                 (pcase (aref fmt (1+ i))
+                   (?Y (push 'year subs) (push "\\([0-9]\\{4\\}\\)" parts))
+                   (?m (push 'month subs) (push "\\([0-9]\\{1,2\\}\\)" parts))
+                   (?d (push 'day subs) (push "\\([0-9]\\{1,2\\}\\)" parts))
+                   (?H (push 'hour subs) (push "\\([0-9]\\{1,2\\}\\)" parts))
+                   (?M (push 'minute subs) (push "\\([0-9]\\{1,2\\}\\)" parts))
+                   (?S (push 'second subs) (push "\\([0-9]\\{1,2\\}\\)" parts)))
+                 (setq i (+ i 2)))
+             (push (regexp-quote (char-to-string (aref fmt i))) parts)
+             (setq i (1+ i))))
+         (let* ((re (concat "\\`" (apply #'concat (nreverse parts)) "\\'"))
+                (keys (nreverse subs))
+                (text (string-trim s)))
+           (and (string-match re text)
+                (let ((year 1970) (month 1) (day 1)
+                      (hour 0) (minute 0) (second 0)
+                      (n 1))
+                  (dolist (k keys)
+                    (let ((v (string-to-number (match-string n text))))
+                      (pcase k
+                        ('year (setq year v))
+                        ('month (setq month v))
+                        ('day (setq day v))
+                        ('hour (setq hour v))
+                        ('minute (setq minute v))
+                        ('second (setq second v)))
+                      (setq n (1+ n))))
+                  (and (>= year 1) (<= month 12) (<= day 31)
+                       (synaxis-parse--time-to-iso
+                        (encode-time second minute hour day month year
+                                     t)))))))))
+
+(defun synaxis-scrape--parse-time-loose (s &optional date-format)
   "Best-effort date parse on S, returning a canonical ISO string or nil.
+When DATE-FORMAT is non-nil, try it first (strftime-like subset).
 Fills in zeros for missing hour/minute/second so date-only strings
 like \"May 15, 2026\" (no time component) still encode.  Preserves
 the timezone from the decoded time when present (e.g. trailing
 letter Z).  A value with no timezone (a bare date) is treated as UTC, so
 date-only inputs do not shift a day under a non-UTC local zone."
   (and (stringp s) (not (string-empty-p s))
-       (condition-case nil
-           (let ((decoded (parse-time-string s)))
-             (and (decoded-time-year decoded)
-                  (decoded-time-month decoded)
-                  (decoded-time-day decoded)
-                  (synaxis-parse--time-to-iso
-                   (encode-time (or (decoded-time-second decoded) 0)
-                                (or (decoded-time-minute decoded) 0)
-                                (or (decoded-time-hour decoded) 0)
-                                (decoded-time-day decoded)
-                                (decoded-time-month decoded)
-                                (decoded-time-year decoded)
-                                (or (decoded-time-zone decoded) t)))))
-         (error nil))))
+       (or (and date-format (synaxis-scrape--parse-with-format s date-format))
+           (condition-case nil
+               (let ((decoded (parse-time-string s)))
+                 (and (decoded-time-year decoded)
+                      (decoded-time-month decoded)
+                      (decoded-time-day decoded)
+                      (synaxis-parse--time-to-iso
+                       (encode-time (or (decoded-time-second decoded) 0)
+                                    (or (decoded-time-minute decoded) 0)
+                                    (or (decoded-time-hour decoded) 0)
+                                    (decoded-time-day decoded)
+                                    (decoded-time-month decoded)
+                                    (decoded-time-year decoded)
+                                    (or (decoded-time-zone decoded) t)))))
+             (error nil)))))
 
 (defun synaxis-scrape--children-text (node)
   "Concatenate all descendant text of NODE, trimmed.  Empty when NODE is nil."
   (if node (string-trim (synaxis-parse--text-of node)) ""))
 
-(defun synaxis-scrape--node-date (node)
-  "Return ISO date string from NODE's `datetime' attribute or text content."
-  (or (synaxis-scrape--parse-time-loose (dom-attr node 'datetime))
-      (synaxis-scrape--parse-time-loose (synaxis-scrape--children-text node))))
+(defun synaxis-scrape--node-date (node &optional date-format)
+  "Return ISO date string from NODE's `datetime' attribute or text content.
+DATE-FORMAT, when non-nil, is tried on the text first."
+  (or (synaxis-scrape--parse-time-loose (dom-attr node 'datetime) date-format)
+      (synaxis-scrape--parse-time-loose (synaxis-scrape--children-text node)
+                                        date-format)))
 
-(defun synaxis-scrape--extract-date (dom selector)
+(defun synaxis-scrape--extract-date (dom selector &optional date-format)
   "Extract an ISO date string from DOM using SELECTOR string.
-SELECTOR may be nil; returns nil if no match."
+SELECTOR may be nil; returns nil if no match.  DATE-FORMAT is an
+optional strftime-like pattern applied to the matched text."
   (and selector
        (let ((nodes (synaxis-scrape--query selector dom)))
          (cl-loop for n in nodes
-                  for d = (synaxis-scrape--node-date n)
+                  for d = (synaxis-scrape--node-date n date-format)
                   when d return d))))
 
 (defun synaxis-scrape--prefer-date (candidate fallback)
@@ -329,7 +379,8 @@ BASE-URL resolves relative hrefs.  RULES is the rule plist."
           :link         link
           :date         (synaxis-scrape--prefer-date
                          (synaxis-scrape--extract-date
-                          node (plist-get rules :date-selector))
+                          node (plist-get rules :date-selector)
+                          (plist-get rules :date-format))
                          (synaxis-parse--time-to-iso (current-time)))
           :content      (synaxis-scrape--node-html node)
           :content-type "html")))
@@ -404,7 +455,8 @@ not the index DOM."
                      node (plist-get rules :content-cleanup))
                     (synaxis-scrape--node-html node)))
          (date (synaxis-scrape--extract-date
-                dom (plist-get rules :date-selector))))
+                dom (plist-get rules :date-selector)
+                (plist-get rules :date-format))))
     (list :content content :date date)))
 
 (defun synaxis-scrape--queue-article (entry rules tracker done-callback)
@@ -417,8 +469,13 @@ Calls DONE-CALLBACK with the entry list once all pending fetches return."
      (lambda (_status entry rules tracker done-callback)
        (let ((buf (current-buffer)))
          (unwind-protect
-             (let ((result (ignore-errors
-                             (synaxis-scrape--apply-content buf rules))))
+             (let ((result
+                    (condition-case err
+                        (synaxis-scrape--apply-content buf rules)
+                      (error
+                       (message "synaxis: article expand failed for %s: %S"
+                                (plist-get entry :link) err)
+                       nil))))
                (when (plist-get result :content)
                  (setq entry (plist-put entry :content (plist-get result :content))))
                (when (plist-get result :date)

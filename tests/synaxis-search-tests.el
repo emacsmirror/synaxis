@@ -573,5 +573,11 @@ and point should land at the start of the buffer."
    (with-current-buffer "*synaxis*"
      (should (equal "tag:unread" synaxis-search--filter)))))
 
+(ert-deftest synaxis-search-test-entry-columns-tolerates-bad-date ()
+  (let* ((entry '(:title "T" :feed-title "F" :date "not-a-date"
+                         :unread t :tags ("unread")))
+         (cols (synaxis-search--entry-columns entry)))
+    (should (string-match-p "not-a-date" (aref cols 0)))))
+
 (provide 'synaxis-search-tests)
 ;;; synaxis-search-tests.el ends here

@@ -244,19 +244,21 @@ options can't be parsed."
   "Insert or upsert feed URL.
 PLIST may contain :title, :type, and :meta.  Keys absent from PLIST
 keep the existing column values (COALESCE) rather than clobbering
-them with nil."
-  (let ((db (synaxis-db--ensure-open)))
+them with nil.  A new feed with no `:type' defaults to \"rss\"."
+  (let* ((db (synaxis-db--ensure-open))
+         (type (plist-get plist :type)))
     (sqlite-execute
      db
-     "INSERT INTO feeds (url, title, type, meta) VALUES (?, ?, ?, ?)
+     "INSERT INTO feeds (url, title, type, meta) VALUES (?, ?, COALESCE(?, 'rss'), ?)
       ON CONFLICT(url) DO UPDATE SET
         title = COALESCE(excluded.title, title),
-        type  = COALESCE(excluded.type,  type),
+        type  = COALESCE(?, type),
         meta  = COALESCE(excluded.meta,  meta);"
      (list url
            (plist-get plist :title)
-           (or (plist-get plist :type) "rss")
-           (synaxis-db--encode-meta (plist-get plist :meta))))))
+           type
+           (synaxis-db--encode-meta (plist-get plist :meta))
+           type))))
 
 (defun synaxis-db-remove-feed (url)
   "Delete the feed at URL.  Cascades to entries and tags."
@@ -317,24 +319,42 @@ a title the user supplied at `synaxis-add-feed' time."
         WHERE url = ? AND (title IS NULL OR title = '');"
        (list title url)))))
 
+(defun synaxis-db-set-feed-type (url type)
+  "Set feed URL's type string to TYPE (e.g. \"rss\", \"atom\", \"json\")."
+  (when (and type (not (string-empty-p type)))
+    (sqlite-execute (synaxis-db--ensure-open)
+                    "UPDATE feeds SET type = ? WHERE url = ?;"
+                    (list type url))))
+
+(defun synaxis-db--plist-present-bind (plist key)
+  "Return (PRESENT VALUE) for KEY in PLIST.
+PRESENT is 1 when KEY is a member of PLIST (even if VALUE is nil),
+else 0.  Used so callers can clear a column by passing an explicit
+nil rather than omitting the key."
+  (if (plist-member plist key)
+      (list 1 (plist-get plist key))
+    (list 0 nil)))
+
 (defun synaxis-db-set-feed-cache-headers (url plist)
   "Update cache header fields on feed URL from PLIST.
 Recognised keys: `:last-fetched', `:last-modified', `:etag', `:failures'.
-Keys absent or nil leave the corresponding column unchanged."
+Keys absent from PLIST leave the corresponding column unchanged.
+Keys present with a nil value clear that column (callers should
+pass an integer for `:failures')."
   (let ((db (synaxis-db--ensure-open)))
     (sqlite-execute
      db
      "UPDATE feeds
-      SET last_fetched  = COALESCE(?, last_fetched),
-          last_modified = COALESCE(?, last_modified),
-          etag          = COALESCE(?, etag),
-          failures      = COALESCE(?, failures)
+      SET last_fetched  = CASE WHEN ? THEN ? ELSE last_fetched END,
+          last_modified = CASE WHEN ? THEN ? ELSE last_modified END,
+          etag          = CASE WHEN ? THEN ? ELSE etag END,
+          failures      = CASE WHEN ? THEN ? ELSE failures END
       WHERE url = ?;"
-     (list (plist-get plist :last-fetched)
-           (plist-get plist :last-modified)
-           (plist-get plist :etag)
-           (plist-get plist :failures)
-           url))))
+     (append (synaxis-db--plist-present-bind plist :last-fetched)
+             (synaxis-db--plist-present-bind plist :last-modified)
+             (synaxis-db--plist-present-bind plist :etag)
+             (synaxis-db--plist-present-bind plist :failures)
+             (list url)))))
 
 ;;; Entries
 
@@ -457,11 +477,18 @@ Returns the id.
 
 When PRESERVE-DATE is non-nil and the row already exists, its
 stored `:date' is kept rather than overwritten -- first-seen
-semantics for feeds whose dates are pull-time (scrapes)."
+semantics for feeds whose dates are pull-time (scrapes).
+
+ENTRY may also set `:date-synthetic' non-nil when `:date' is a
+decode fallback (\"now\") rather than a timestamp from the feed.
+On update, a synthetic date keeps the previously stored date so
+undated items do not walk forward on every successful fetch."
   (let* ((entry     (plist-put entry :feed-url url))
          (source-id (plist-get entry :source-id))
          (existing  (synaxis-db-find-entry url source-id))
-         (entry     (if (and preserve-date existing)
+         (entry     (if (and existing
+                             (or preserve-date
+                                 (plist-get entry :date-synthetic)))
                         (plist-put entry :date
                                    (plist-get (synaxis-db-get-entry existing) :date))
                       entry))
@@ -672,13 +699,25 @@ Recognised keys: `:url-selector', `:url-pattern',
                          (plist-put :meta (plist-get extra :extra)))))))
 
 (defun synaxis-db-list-scrape-rules ()
-  "Return an alist of (URL . PLIST) for every scrape rule."
+  "Return an alist of (URL . PLIST) for every scrape rule.
+Issues a single SELECT (no per-rule follow-up query)."
   (let ((db (synaxis-db--ensure-open)))
     (mapcar
      (lambda (row)
-       (cons (car row)
-             (synaxis-db-get-scrape-rule (car row))))
-     (sqlite-select db "SELECT feed_url FROM scrape_rules;"))))
+       (let* ((base (synaxis-db--scrape-rule-row row))
+              (extra (plist-get base :meta)))
+         (cons (car row)
+               (thread-first base
+                             (plist-put :content-cleanup
+                                        (plist-get extra :content-cleanup))
+                             (plist-put :limit (plist-get extra :limit))
+                             (plist-put :meta (plist-get extra :extra))))))
+     (sqlite-select
+      db
+      "SELECT feed_url, item_selector, title_selector,
+              link_selector, date_selector, date_format,
+              content_selector, meta
+       FROM scrape_rules;"))))
 
 (defun synaxis-db-get-tags (entry-id)
   "Return the list of tag strings on ENTRY-ID."

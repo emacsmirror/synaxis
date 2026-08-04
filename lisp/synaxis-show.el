@@ -92,6 +92,15 @@ in both DB-backed and plist-preview render paths.")
                     (selected-window))))
     (max 20 (1- (window-body-width window)))))
 
+(defun synaxis-show--format-date (date-iso)
+  "Format DATE-ISO for the show header; return raw string on parse failure."
+  (if (not date-iso)
+      ""
+    (condition-case nil
+        (format-time-string "%Y-%m-%d %H:%M"
+                            (parse-iso8601-time-string date-iso))
+      (error (format "%s" date-iso)))))
+
 (defun synaxis-show-render-shr (entry)
   "Insert ENTRY's metadata and content into the current buffer."
   (insert (propertize (or (plist-get entry :title) "(untitled)")
@@ -100,12 +109,7 @@ in both DB-backed and plist-preview render paths.")
           (propertize
            (format "%s -- %s"
                    (or (plist-get entry :feed-title) "")
-                   (let ((date-iso (plist-get entry :date)))
-                     (if date-iso
-                         (format-time-string
-                          "%Y-%m-%d %H:%M"
-                          (parse-iso8601-time-string date-iso))
-                       "")))
+                   (synaxis-show--format-date (plist-get entry :date)))
            'face 'synaxis-show-meta-face)
           "\n\n")
   (let ((content (plist-get entry :content))
