@@ -84,19 +84,3 @@ nix flake check    # full matrix, reproducible
 After changing a module: byte-compile it and run its ERT file before
 moving on. Prefer temporary databases in tests; never point batch tests
 at a live user DB. Run `git diff --check` before commit.
-
-## Contributions
-
-Send patches to <patches@thanosapollo.org> with a subject like
-`[PATCH synaxis] Short description`.
-
-Send bugs and feature requests to <bugs@thanosapollo.org> with a subject
-like `[BUG synaxis] Short description`.
-
-One logical change per commit; subject `module: Summary` (prefixes such
-as `db:`, `parse:`, `fetch:`, `filter:`, `search:`, `show:`, `scrape:`,
-`tl:`, `edit:`, `ol:`, `tests:`, `Makefile:`). AI-assisted contributions
-are welcome when the submitter understands, tests, and can license the
-change under GPL-3.0+. Keep any assistance note in file headers if
-needed, not in commit messages. No generated-by or co-author agent
-trailers.
